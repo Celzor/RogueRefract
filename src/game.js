@@ -13,7 +13,7 @@ const ORB_CONTACT_ARC = 0.075;
 const FIELD_DURATION = 20000;
 const MAX_BEAM_STACKS = 10;
 const MAX_HASTE_STACKS = 8;
-const IMPORTANT_EVENTS = new Set(['levelup', 'collect', 'round-start', 'round-end', 'reset', 'purchase', 'surge-start']);
+const IMPORTANT_EVENTS = new Set(['levelup', 'collect', 'round-start', 'round-end', 'reset', 'purchase', 'surge-start', 'cast', 'knockout', 'lobby', 'winner']);
 export const ORB_CATALOG = Object.freeze([
   { id: 'star', name: 'Starlight', color: '#ffdc89', points: 60, duration: 6, description: '1.5× points for 6 seconds.' },
   { id: 'chip', name: 'Refract chip', color: '#bcf6cf', points: 35, duration: 6, description: '+25 shards and +25% orbit speed for 6 seconds.' },
@@ -25,6 +25,9 @@ export const ORB_CATALOG = Object.freeze([
   { id: 'echo', name: 'Echo orb', color: '#aab7ff', points: 65, duration: 6, description: 'Repeat your ray point rewards for 6 seconds.' },
   { id: 'shield', name: 'Prism shield', color: '#6de9d3', points: 55, duration: 8, description: 'Clear hostile effects and block ice, time stop and gravity for 8 seconds.' },
   { id: 'blackhole', name: 'Black hole', color: '#b995f5', points: 100, duration: 6, description: 'Pull unshielded rivals inward every 0.75 seconds for 6 seconds.' },
+  { id: 'light', name: 'Light mote', color: '#f8ec9a', points: 20, duration: 0, light: 2, description: '+2 Light Points in battle. Fuel for purchased moves.' },
+  { id: 'light-surge', name: 'Light cluster', color: '#80e8ff', points: 35, duration: 0, light: 4, description: '+4 Light Points in battle. Move PP still limits each move.' },
+  { id: 'light-nova', name: 'Nova orb', color: '#e4b0ff', points: 50, duration: 0, light: 6, description: '+6 Light Points in battle. Store light for stronger moves.' },
 ].map(Object.freeze));
 const orbById = new Map(ORB_CATALOG.map((orb) => [orb.id, orb]));
 export const PLAYER_COLORS = ['#b5a0ff', '#6de9d3', '#ffb873', '#f58bbd', '#72b8ff', '#d9e984', '#ff8e91', '#8be0fa', '#cab9a7', '#a5e5aa', '#dca7ff', '#f2dd98'];
@@ -69,6 +72,175 @@ const wrap = (angle) => ((angle % TAU) + TAU) % TAU;
 const distance = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
 const validNumber = (value, fallback) => Number.isFinite(value) ? value : fallback;
 
+export const MOVE_CATALOG = Object.freeze([
+  { id: 'photon-strike', name: 'Photon strike', type: 'attack', target: 'rival', icon: 'swords', color: '#ffb873', cost: 35, maxLevel: 5, description: 'Strike one chosen rival. Higher ranks deal more damage.' },
+  { id: 'mending-light', name: 'Mending light', type: 'heal', target: 'self', icon: 'sun', color: '#6de9d3', cost: 30, maxLevel: 5, description: 'Restore your own HP. Cannot revive a knocked-out pilot.' },
+  { id: 'mirror-veil', name: 'Mirror veil', type: 'reflect', target: 'self', icon: 'prism', color: '#b5a0ff', cost: 40, maxLevel: 5, description: 'Reflect the next hostile move in the next 6 seconds. One bounce only.' },
+  { id: 'static-pulse', name: 'Static pulse', type: 'stun', target: 'rival', icon: 'zap', color: '#8be0fa', cost: 40, maxLevel: 5, description: 'Damage and briefly stun one chosen rival, blocking movement and moves.' },
+  { id: 'aegis-shell', name: 'Aegis shell', type: 'shield', target: 'self', icon: 'prism', color: '#f8ec9a', cost: 35, maxLevel: 5, description: 'Absorb incoming damage for 8 seconds. Higher ranks add shield HP.' },
+].map(Object.freeze));
+export const ORB_UPGRADE_CATALOG = Object.freeze([
+  { id: 'light-reservoir', name: 'Light reservoir', icon: 'gem', cost: 50, maxLevel: 3, description: '+5 maximum Light Points per rank. Starts at 20 LP.' },
+  { id: 'orb-condenser', name: 'Orb condenser', icon: 'sparkles', cost: 55, maxLevel: 3, description: '+1 Light Point from every light orb per rank.' },
+].map(Object.freeze));
+const movesById = new Map(MOVE_CATALOG.map((move) => [move.id, move]));
+const orbUpgradesById = new Map(ORB_UPGRADE_CATALOG.map((item) => [item.id, item]));
+const BATTLE_NUMBERS = ['health', 'lightPoints', 'castReadyAt', 'stunUntil', 'reflectUntil', 'shieldHealth', 'barrierUntil', 'knockouts', 'skipTurns'];
+const moveLevel = (player, id) => Math.max(0, Math.min(5, Math.floor(player.moves?.[id] || 0)));
+const orbLevel = (player, id) => Math.max(0, Math.min(3, Math.floor(player.orbUpgrades?.[id] || 0)));
+export const getLightCapacity = (player) => 20 + orbLevel(player, 'light-reservoir') * 5;
+export const getLightYield = (player, type) => orbById.get(type)?.light ? orbById.get(type).light + orbLevel(player, 'orb-condenser') : 0;
+export const getMoveUnlockRound = (player, id) => movesById.has(id) ? moveLevel(player, id) + 1 : Infinity;
+export const getMoveCost = (player, id) => movesById.has(id) ? movesById.get(id).cost + moveLevel(player, id) * 25 : Infinity;
+export const getOrbUpgradeCost = (player, id) => orbUpgradesById.has(id) ? orbUpgradesById.get(id).cost + orbLevel(player, id) * 35 : Infinity;
+export const getOrbUpgradeUnlockRound = (player, id) => orbUpgradesById.has(id) ? orbLevel(player, id) + 1 : Infinity;
+
+export function getMoveStats(player, id, levelOverride) {
+  const move = movesById.get(id);
+  if (!move) return null;
+  const level = Number.isInteger(levelOverride) ? Math.max(0, Math.min(5, levelOverride)) : moveLevel(player, id);
+  const rank = Math.max(1, level);
+  const offset = rank - 1;
+  return {
+    level, target: move.target, cooldown: 2.5,
+    lightCost: ({ attack: 3, heal: 4, reflect: 5, stun: 5, shield: 4 })[move.type] + Math.floor(offset / 2),
+    maxPP: ({ attack: 8, heal: 4, reflect: 3, stun: 4, shield: 4 })[move.type] + offset,
+    power: move.type === 'attack' ? 20 + offset * 6 : move.type === 'heal' ? 24 + offset * 7 : move.type === 'stun' ? 8 + offset * 3 : move.type === 'shield' ? 20 + offset * 10 : 0,
+    duration: move.type === 'reflect' ? 6 + offset : move.type === 'stun' ? 1.2 + offset * 0.3 : move.type === 'shield' ? 8 : 0,
+  };
+}
+
+function initializeBattle(player) {
+  if (player.moves) return;
+  Object.assign(player, { health: 100, lightPoints: 0, moves: {}, movePP: {}, orbUpgrades: {}, castReadyAt: 0, stunUntil: 0, reflectUntil: 0, shieldHealth: 0, barrierUntil: 0, knockouts: 0, skipTurns: 0 });
+}
+
+function restoreBattle(player, clearLight = false) {
+  initializeBattle(player);
+  player.health = 100;
+  player.lightPoints = clearLight ? 0 : Math.min(getLightCapacity(player), player.lightPoints);
+  player.castReadyAt = player.stunUntil = player.reflectUntil = player.shieldHealth = player.barrierUntil = player.skipTurns = 0;
+  player.movePP = Object.fromEntries(MOVE_CATALOG.filter((move) => moveLevel(player, move.id)).map((move) => [move.id, getMoveStats(player, move.id).maxPP]));
+}
+
+function spendBattleChoice(player, cost) {
+  if (player.upgradeTokens > 0) player.upgradeTokens--;
+  else if (player.credits >= cost) player.credits -= cost;
+  else return false;
+  player.ready = false;
+  return true;
+}
+
+function buyMove(state, player, id) {
+  const move = movesById.get(id);
+  if (!move) return { ok: false, error: 'Choose a move from the battle shop.' };
+  const level = moveLevel(player, id);
+  if (level >= move.maxLevel) return { ok: false, error: 'That move is already at maximum rank.' };
+  if (level + 1 > Math.max(1, state.round + 1)) return { ok: false, error: `Rank ${level + 1} unlocks before heat ${level + 1}.` };
+  if (!spendBattleChoice(player, getMoveCost(player, id))) return { ok: false, error: 'Not enough shards for this move.' };
+  player.moves[id] = level + 1;
+  player.movePP[id] = getMoveStats(player, id).maxPP;
+  emit(state, { type: 'purchase', playerId: player.id, text: `${move.name} · rank ${level + 1}` });
+  return { ok: true };
+}
+
+function buyOrbUpgrade(state, player, id) {
+  const item = orbUpgradesById.get(id);
+  if (!item) return { ok: false, error: 'Choose an orb upgrade from the battle shop.' };
+  const level = orbLevel(player, id);
+  if (level >= item.maxLevel) return { ok: false, error: 'That orb upgrade is already at maximum rank.' };
+  if (level + 1 > Math.max(1, state.round + 1)) return { ok: false, error: `Rank ${level + 1} unlocks before heat ${level + 1}.` };
+  if (!spendBattleChoice(player, getOrbUpgradeCost(player, id))) return { ok: false, error: 'Not enough shards for this orb upgrade.' };
+  player.orbUpgrades[id] = level + 1;
+  emit(state, { type: 'purchase', playerId: player.id, text: `${item.name} · rank ${level + 1}` });
+  return { ok: true };
+}
+
+function castMove(state, player, action) {
+  const now = state.now;
+  const move = movesById.get(action.moveId);
+  if (state.gameMode !== 'battle' || state.phase !== 'playing') return { ok: false, error: 'Cast moves during a battle heat.' };
+  if (!move || !moveLevel(player, move.id)) return { ok: false, error: 'Buy that move in a buy round first.' };
+  if (player.health <= 0) return { ok: false, error: 'You are eliminated until the next heat.' };
+  const turnBased = state.combatStyle !== 'no-limits';
+  if (turnBased && state.turnPlayerId !== player.id) return { ok: false, error: 'Wait for your turn before casting.' };
+  if (player.stunUntil > now || player.frozenUntil > now) return { ok: false, error: 'You cannot cast while stunned or frozen.' };
+  if (player.castReadyAt > now) return { ok: false, error: 'Your moves are recharging.' };
+  const target = typeof action.targetId === 'string' ? state.players.find((pilot) => pilot.id === action.targetId) : null;
+  if (!target || (move.target === 'self' ? target.id !== player.id : target.id === player.id)) return { ok: false, error: move.target === 'self' ? 'Choose yourself for this move.' : 'Choose a rival before every attack.' };
+  if (target.health <= 0) return { ok: false, error: 'That pilot is eliminated. Choose another target.' };
+  const stats = getMoveStats(player, move.id);
+  if (turnBased && (player.movePP[move.id] || 0) <= 0) return { ok: false, error: 'No PP left. Move PP refills in the next buy round.' };
+  if (turnBased && player.lightPoints < stats.lightCost) return { ok: false, error: `Collect light orbs: this move needs ${stats.lightCost} LP.` };
+  if (move.type === 'heal' && player.health >= 100) return { ok: false, error: 'Your HP is already full.' };
+  if (move.type === 'reflect' && player.reflectUntil > now) return { ok: false, error: 'Your mirror veil is already active.' };
+  if (move.type === 'shield' && player.barrierUntil > now && player.shieldHealth > 0) return { ok: false, error: 'Your shield is already active.' };
+  if (turnBased) {
+    player.lightPoints -= stats.lightCost;
+    player.movePP[move.id]--;
+  }
+  player.castReadyAt = now + stats.cooldown * 1000;
+  let recipient = target;
+  let reflected = false;
+  let amount = stats.power;
+  let blocked = false;
+  if (move.type === 'heal') {
+    amount = Math.min(stats.power, 100 - player.health);
+    player.health += amount;
+  } else if (move.type === 'reflect') {
+    player.reflectUntil = now + stats.duration * 1000;
+  } else if (move.type === 'shield') {
+    player.shieldHealth = stats.power;
+    player.barrierUntil = now + stats.duration * 1000;
+  } else {
+    if (target.reflectUntil > now) {
+      target.reflectUntil = 0;
+      recipient = player;
+      reflected = true;
+    }
+    blocked = recipient.shieldUntil > now;
+    if (blocked) amount = 0;
+    else {
+      const absorbed = recipient.barrierUntil > now ? Math.min(recipient.shieldHealth, stats.power) : 0;
+      recipient.shieldHealth = recipient.barrierUntil > now ? recipient.shieldHealth - absorbed : 0;
+      amount = Math.min(stats.power - absorbed, recipient.health);
+      recipient.health -= amount;
+      if (move.type === 'stun' && !absorbed) {
+        recipient.stunUntil = now + Math.round(stats.duration * 1000);
+        if (turnBased) recipient.skipTurns = 1;
+      }
+    }
+  }
+  emit(state, { type: 'cast', playerId: player.id, otherId: recipient.id, moveId: move.id, amount, ...(reflected ? { reflected: true, reflectedBy: target.id } : {}), ...(blocked ? { blocked: true } : {}), text: `${move.name}${reflected ? ' reflected' : ''}${blocked ? ' blocked by Prism shield' : move.type === 'reflect' ? ' · next attack reflected' : ` · ${amount} ${move.type === 'heal' ? 'HP restored' : move.type === 'shield' ? 'shield HP' : 'damage'}`}` });
+  if (recipient.health <= 0) {
+    recipient.lightPoints = 0;
+    recipient.stunUntil = recipient.reflectUntil = recipient.boostUntil = 0;
+    const victor = reflected ? target : player;
+    victor.knockouts++;
+    victor.score += 150;
+    victor.roundScore += 150;
+    victor.credits += 20;
+    grantXp(state, victor, 20, getStats(victor));
+    emit(state, { type: 'knockout', playerId: victor.id, otherId: recipient.id, amount: 150, text: `${victor.name} knocked out ${recipient.name} · +150 points` });
+    finishBattleIfWon(state);
+  }
+  if (turnBased && state.phase === 'playing') advanceBattleTurn(state);
+  return { ok: true };
+}
+
+function advanceBattleTurn(state, previous = state.players.findIndex((player) => player.id === state.turnPlayerId)) {
+  for (let offset = 1; offset <= state.players.length * 2; offset++) {
+    const player = state.players[(Math.max(-1, previous) + offset) % state.players.length];
+    if (!player || player.health <= 0) continue;
+    if (player.skipTurns > 0) { player.skipTurns--; continue; }
+    state.turnPlayerId = player.id;
+    state.turnEndsAt = state.now + 10000;
+    return;
+  }
+  state.turnPlayerId = null;
+  state.turnEndsAt = 0;
+}
+
 function random(state) {
   state.rng = (state.rng + 0x6D2B79F5) >>> 0;
   let t = state.rng;
@@ -111,7 +283,7 @@ export function getStats(player, now = player.updatedAt || 0) {
 
 /** The renderer and host share the complete angular motion calculation. */
 export function getPlayerSpeed(player, now = player.updatedAt || 0) {
-  if (player.frozenUntil > now) return 0;
+  if (player.frozenUntil > now || player.stunUntil > now || player.health <= 0) return 0;
   const stats = getStats(player, now);
   return stats.speed * LANE_SPEEDS[player.lane]
     * (player.boostUntil > now ? 1.65 : 1)
@@ -125,7 +297,7 @@ export function getRaySpeedMultiplier(state, now = state.now) {
 }
 
 function travelDistance(player, from, to) {
-  const boundaries = [from, to, ...['boostUntil', 'slingUntil', 'chipUntil', 'slowUntil', 'frozenUntil', 'overdriveUntil']
+  const boundaries = [from, to, ...['boostUntil', 'slingUntil', 'chipUntil', 'slowUntil', 'frozenUntil', 'overdriveUntil', 'stunUntil']
     .map((key) => player[key]).filter((at) => at > from && at < to)].sort((a, b) => a - b);
   let distance = 0;
   for (let index = 1; index < boundaries.length; index++) {
@@ -150,14 +322,28 @@ export function packGameState(state) {
   return {
     ...state,
     packed: 1,
-    players: state.players.map((player) => ({
-      ...player,
-      upgrades: Object.keys(player.upgrades).length ? UPGRADE_CATALOG.map((item) => player.upgrades[item.id] || 0) : [],
-    })),
+    players: state.players.map((player) => {
+      const packed = { ...player, upgrades: Object.keys(player.upgrades).length ? UPGRADE_CATALOG.map((item) => player.upgrades[item.id] || 0) : [] };
+      if (player.moves) {
+        packed.battle = [...BATTLE_NUMBERS.map((key) => player[key]), ...MOVE_CATALOG.map((move) => player.moves[move.id] || 0), ...MOVE_CATALOG.map((move) => Object.hasOwn(player.movePP, move.id) ? player.movePP[move.id] : -1), ...ORB_UPGRADE_CATALOG.map((item) => player.orbUpgrades[item.id] || 0)];
+        for (const key of [...BATTLE_NUMBERS, 'moves', 'movePP', 'orbUpgrades']) delete packed[key];
+      }
+      return packed;
+    }),
     collisionCooldowns: Object.entries(state.collisionCooldowns).map(([key, until]) => {
       const indexes = pairs.get(key);
       return indexes ? [...indexes, until] : [key, until];
     }),
+    events: state.events.map((event) => {
+      const packed = { ...event };
+      for (const key of ['playerId', 'otherId', 'reflectedBy']) {
+        const index = state.players.findIndex((player) => player.id === event[key]);
+        if (index >= 0) packed[key] = index;
+      }
+      if (event.moveId && movesById.has(event.moveId)) packed.moveId = MOVE_CATALOG.findIndex((move) => move.id === event.moveId);
+      return packed;
+    }),
+    fieldEffects: state.fieldEffects.map((effect) => [effect.type === 'beam' ? 0 : 1, effect.expiresAt]),
   };
 }
 
@@ -173,7 +359,34 @@ export function unpackGameState(snapshot) {
       if (!Number.isInteger(level) || level < 0 || level > UPGRADE_CATALOG[index].maxLevel) throw new TypeError('Invalid packed upgrade level.');
       if (level) upgrades.push([UPGRADE_CATALOG[index].id, level]);
     });
-    return { ...player, upgrades: Object.fromEntries(upgrades) };
+    const decoded = { ...player, upgrades: Object.fromEntries(upgrades) };
+    if (player.battle !== undefined) {
+      const expected = BATTLE_NUMBERS.length + MOVE_CATALOG.length * 2 + ORB_UPGRADE_CATALOG.length;
+      if (!Array.isArray(player.battle) || player.battle.length !== expected || player.battle.some((value, index) => !Number.isFinite(value) || !Number.isInteger(value) || value < (index >= BATTLE_NUMBERS.length + MOVE_CATALOG.length && index < BATTLE_NUMBERS.length + MOVE_CATALOG.length * 2 ? -1 : 0))) throw new TypeError('Invalid packed battle state.');
+      let index = 0;
+      for (const key of BATTLE_NUMBERS) decoded[key] = player.battle[index++];
+      decoded.moves = {};
+      for (const move of MOVE_CATALOG) {
+        const rank = player.battle[index++];
+        if (rank > move.maxLevel) throw new TypeError('Invalid packed move rank.');
+        if (rank) decoded.moves[move.id] = rank;
+      }
+      decoded.movePP = {};
+      for (const move of MOVE_CATALOG) {
+        const pp = player.battle[index++];
+        if (pp > getMoveStats(decoded, move.id).maxPP) throw new TypeError('Invalid packed move PP.');
+        if (pp >= 0) decoded.movePP[move.id] = pp;
+      }
+      decoded.orbUpgrades = {};
+      for (const item of ORB_UPGRADE_CATALOG) {
+        const rank = player.battle[index++];
+        if (rank > item.maxLevel) throw new TypeError('Invalid packed orb rank.');
+        if (rank) decoded.orbUpgrades[item.id] = rank;
+      }
+      if (decoded.health > 100 || decoded.lightPoints > getLightCapacity(decoded) || decoded.shieldHealth > 60) throw new TypeError('Invalid packed battle resources.');
+      delete decoded.battle;
+    }
+    return decoded;
   });
   state.collisionCooldowns = Object.fromEntries(snapshot.collisionCooldowns.map((pair) => {
     if (!Array.isArray(pair)) throw new TypeError('Invalid packed collision cooldown.');
@@ -181,13 +394,31 @@ export function unpackGameState(snapshot) {
     if (pair.length !== 3 || !Number.isInteger(pair[0]) || !Number.isInteger(pair[1]) || pair[0] === pair[1] || !state.players[pair[0]] || !state.players[pair[1]] || !Number.isFinite(pair[2])) throw new TypeError('Invalid packed collision pair.');
     return [[state.players[pair[0]].id, state.players[pair[1]].id].sort().join('|'), pair[2]];
   }));
+  if (!Array.isArray(snapshot.events) || !Array.isArray(snapshot.fieldEffects)) throw new TypeError('Invalid packed battle events.');
+  state.events = snapshot.events.map((event) => {
+    const decoded = { ...event };
+    for (const key of ['playerId', 'otherId', 'reflectedBy']) if (typeof event[key] === 'number') {
+      if (!Number.isInteger(event[key]) || !state.players[event[key]]) throw new TypeError('Invalid packed event pilot.');
+      decoded[key] = state.players[event[key]].id;
+    }
+    if (typeof event.moveId === 'number') {
+      if (!Number.isInteger(event.moveId) || !MOVE_CATALOG[event.moveId]) throw new TypeError('Invalid packed event move.');
+      decoded.moveId = MOVE_CATALOG[event.moveId].id;
+    }
+    return decoded;
+  });
+  state.fieldEffects = snapshot.fieldEffects.map((effect) => {
+    if (!Array.isArray(effect)) return { ...effect };
+    if (effect.length !== 2 || ![0, 1].includes(effect[0]) || !Number.isFinite(effect[1])) throw new TypeError('Invalid packed field effect.');
+    return { type: effect[0] === 0 ? 'beam' : 'haste', expiresAt: effect[1] };
+  });
   return state;
 }
 
 export function createGame({ seed = Date.now(), now = Date.now(), roundDuration = 60, shopDuration = 30 } = {}) {
   const normalizedSeed = validNumber(Number(seed), 1) >>> 0;
   return {
-    version: 1, seed: normalizedSeed, rng: normalizedSeed, phase: 'lobby', round: 0,
+    version: 1, seed: normalizedSeed, rng: normalizedSeed, gameMode: 'orbit', combatStyle: 'turn-based', phase: 'lobby', round: 0,
     phaseEndsAt: 0, roundDuration: Math.max(1, validNumber(roundDuration, 60)),
     shopDuration: Math.max(1, validNumber(shopDuration, 30)), now,
     players: [], rays: [
@@ -238,6 +469,7 @@ export function addPlayer(state, { id, name = 'Pilot', color, avatarUrl = null, 
     voiceIntensity: 0, voiceUntil: 0, lastVoiceAt: -1000, voiceCarry: 0, voiceEventAt: 0,
   };
   state.players.push(player);
+  if (state.gameMode === 'battle') initializeBattle(player);
   if (state.phase === 'shop') player.shopOffers = rollOffers(state, player);
   return player;
 }
@@ -249,6 +481,8 @@ export function removePlayer(state, id) {
   for (const key of Object.keys(state.collisionCooldowns)) {
     if (key.split('|').includes(String(id))) delete state.collisionCooldowns[key];
   }
+  finishBattleIfWon(state);
+  if (state.gameMode === 'battle' && state.phase === 'playing' && state.combatStyle !== 'no-limits' && state.turnPlayerId === String(id)) advanceBattleTurn(state, index - 1);
   return true;
 }
 
@@ -309,7 +543,13 @@ export function startRound(state, now = state.now) {
   state.rays.length = Math.min(state.rays.length, state.baseRayCount);
   state.nextPickupAt = now + ORB_INTERVAL;
   state.surge = { active: false, endsAt: 0, nextAt: now + 15000, index: 0 };
+  if (state.gameMode === 'battle') {
+    state.battleWinnerId = null;
+    state.battleEntrants = state.players.length;
+    state.battlePreparation = false;
+  }
   for (const player of state.players) {
+    if (state.gameMode === 'battle') restoreBattle(player);
     player.roundScore = 0;
     player.roundHits = 0;
     player.roundCollisions = 0;
@@ -333,19 +573,35 @@ export function startRound(state, now = state.now) {
     player.voiceEventAt = now;
     player.nextDecisionAt = now + 1500 + random(state) * 3500;
   }
+  if (state.gameMode === 'battle') {
+    state.turnPlayerId = null;
+    state.turnEndsAt = 0;
+    if (state.combatStyle !== 'no-limits') advanceBattleTurn(state);
+  }
   emit(state, { type: 'round-start', amount: state.round, text: `Round ${state.round} · catch the light` });
   return true;
 }
 
-function openShop(state, now) {
+function openShop(state, now, preparation = false) {
+  if (state.gameMode === 'battle') {
+    state.battlePreparation = preparation;
+    state.turnPlayerId = null;
+    state.turnEndsAt = 0;
+  }
   state.phase = 'shop';
   state.pickups = [];
   state.fieldEffects = [];
   state.rays.length = Math.min(state.rays.length, state.baseRayCount);
   state.surge.active = false;
   state.phaseEndsAt = now + state.shopDuration * 1000;
-  state.lastResults = [...state.players].sort((a, b) => b.roundScore - a.roundScore).map((p) => ({ id: p.id, name: p.name, score: p.roundScore }));
+  state.lastResults = preparation ? [] : [...state.players].sort((a, b) => state.gameMode === 'battle' ? Number(b.id === state.battleWinnerId) - Number(a.id === state.battleWinnerId) || b.health - a.health || b.roundScore - a.roundScore : b.roundScore - a.roundScore).map((p) => ({ id: p.id, name: p.name, score: p.roundScore, ...(state.gameMode === 'battle' ? { health: p.health, knockouts: p.knockouts } : {}) }));
   for (const player of state.players) {
+    if (state.gameMode === 'battle') {
+      // Keep elimination and final HP visible throughout the buy round. Revive
+      // only when the next heat launches; buying refills every owned move's PP.
+      player.castReadyAt = player.stunUntil = player.reflectUntil = player.shieldHealth = player.barrierUntil = player.skipTurns = 0;
+      player.movePP = Object.fromEntries(MOVE_CATALOG.filter((move) => moveLevel(player, move.id)).map((move) => [move.id, getMoveStats(player, move.id).maxPP]));
+    }
     player.boostUntil = 0;
     for (const key of ['starlightUntil', 'chipUntil', 'slowUntil', 'frozenUntil', 'overdriveUntil', 'echoUntil', 'shieldUntil', 'gravityUntil', 'nextGravityAt']) player[key] = 0;
     player.voiceIntensity = 0;
@@ -355,9 +611,18 @@ function openShop(state, now) {
     player.shopOffers = rollOffers(state, player);
     const stats = getStats(player);
     const interest = Math.min(100 * count(player, 'nebula-bank'), Math.floor(player.credits * stats.interest));
-    player.credits += interest + 35;
-    if (interest) emit(state, { type: 'interest', playerId: player.id, amount: interest });
+    player.credits += preparation ? 0 : interest + 35;
+    if (interest && !preparation) emit(state, { type: 'interest', playerId: player.id, amount: interest });
     if (player.bot) {
+      if (state.gameMode === 'battle') {
+        for (const move of MOVE_CATALOG) {
+          if (!moveLevel(player, move.id) && (player.upgradeTokens || getMoveCost(player, move.id) <= player.credits)) buyMove(state, player, move.id);
+        }
+        const nextMove = MOVE_CATALOG.find((move) => moveLevel(player, move.id) < Math.min(5, state.round + 1) && (player.upgradeTokens || getMoveCost(player, move.id) <= player.credits));
+        if (nextMove) buyMove(state, player, nextMove.id);
+        const orbUpgrade = ORB_UPGRADE_CATALOG.find((item) => orbLevel(player, item.id) < Math.min(3, state.round + 1) && (player.upgradeTokens || getOrbUpgradeCost(player, item.id) <= player.credits));
+        if (orbUpgrade) buyOrbUpgrade(state, player, orbUpgrade.id);
+      }
       for (let index = 0; index < 3; index++) {
         const offer = player.shopOffers.find((id) => player.upgradeTokens || getUpgradeCost(player, id) <= player.credits);
         if (!offer) break;
@@ -366,7 +631,17 @@ function openShop(state, now) {
       player.ready = true;
     }
   }
-  emit(state, { type: 'round-end', amount: state.round, text: 'Round complete · upgrade your orbit' });
+  emit(state, { type: preparation ? 'battle-prep' : 'round-end', amount: state.round, text: preparation ? 'Battle preparation · buy your first moves' : 'Round complete · upgrade your orbit' });
+}
+
+function finishBattleIfWon(state) {
+  if (state.gameMode !== 'battle' || state.phase !== 'playing' || state.battleEntrants < 2) return false;
+  const survivors = state.players.filter((player) => player.health > 0);
+  if (survivors.length > 1) return false;
+  state.battleWinnerId = survivors[0]?.id || null;
+  emit(state, { type: 'winner', playerId: state.battleWinnerId, text: survivors.length ? 'Winner winner chicken dinner!' : 'All pilots eliminated.' });
+  openShop(state, state.now);
+  return true;
 }
 
 function purchase(state, player, upgradeId) {
@@ -416,6 +691,7 @@ function collectOrb(state, player, pickup) {
   const now = state.now;
   player.score += orb.points;
   player.roundScore += orb.points;
+  if (state.gameMode === 'battle' && orb.light) player.lightPoints = Math.min(getLightCapacity(player), player.lightPoints + getLightYield(player, pickup.type));
   if (pickup.type === 'star') extendEffect(player, 'starlightUntil', now, 6000);
   if (pickup.type === 'chip') { extendEffect(player, 'chipUntil', now, 6000); player.credits += 25; }
   if (pickup.type === 'beam' || pickup.type === 'haste') addFieldEffect(state, pickup.type, now);
@@ -427,7 +703,7 @@ function collectOrb(state, player, pickup) {
   }
   if (['ice', 'clock', 'blackhole'].includes(pickup.type)) {
     for (const rival of state.players) {
-      if (rival.id === player.id || rival.shieldUntil > now) continue;
+      if (rival.id === player.id || rival.shieldUntil > now || rival.health <= 0) continue;
       if (pickup.type === 'ice') extendEffect(rival, 'slowUntil', now, 4000, 8000);
       if (pickup.type === 'clock') extendEffect(rival, 'frozenUntil', now, 2000, 4000);
       if (pickup.type === 'blackhole') {
@@ -440,10 +716,15 @@ function collectOrb(state, player, pickup) {
 }
 
 function nextOrbType(state) {
+  // Alternating fuel/effect cards guarantee at least half of battle drops are
+  // usable Light Points, including the very first pickup of every heat.
+  if (state.gameMode === 'battle' && state.pickupSeq % 2 === 1) {
+    return ['light', 'light-surge', 'light', 'light-nova'][Math.floor((state.pickupSeq - 1) / 2) % 4];
+  }
   if (!state.orbDeck.length) {
     // A seeded deck guarantees every effect appears, while repeated prism/rush
     // cards make stacking possible without making hostile orbs overwhelming.
-    state.orbDeck = [...orbById.keys(), 'beam', 'beam', 'beam', 'beam', 'beam', 'beam', 'haste', 'haste'];
+    state.orbDeck = [...orbById.keys(), 'beam', 'beam', 'beam', 'haste', 'haste'];
     for (let index = state.orbDeck.length - 1; index > 0; index--) {
       const other = Math.floor(random(state) * (index + 1));
       [state.orbDeck[index], state.orbDeck[other]] = [state.orbDeck[other], state.orbDeck[index]];
@@ -472,24 +753,75 @@ export function applyAction(state, playerId, action, now = state.now) {
   const player = state.players.find((p) => p.id === String(playerId));
   if (!player) return { ok: false, error: 'Join the orbit before taking an action.' };
   if (!action || typeof action !== 'object' || typeof action.type !== 'string') return { ok: false, error: 'Invalid action.' };
+  if (action.round !== undefined && (!Number.isInteger(action.round) || action.round !== state.round)) return { ok: false, error: 'That action belongs to an earlier round. Try again.' };
   state.now = now;
   player.updatedAt = now;
-  if (state.phase === 'playing' && now >= state.phaseEndsAt && ['boost', 'lane', 'collect', 'voice'].includes(action.type)) {
+  if (state.phase === 'playing' && now >= state.phaseEndsAt && ['boost', 'lane', 'collect', 'voice', 'cast', 'pass-turn'].includes(action.type)) {
     return { ok: false, error: 'This round has ended. The upgrade shop is opening.' };
   }
+  if (state.gameMode === 'battle' && state.phase === 'playing' && state.combatStyle !== 'no-limits' && ['cast', 'pass-turn'].includes(action.type) && now >= state.turnEndsAt) {
+    const expiredPlayerId = state.turnPlayerId;
+    advanceBattleTurn(state);
+    if (player.id === expiredPlayerId) return { ok: false, error: 'Your turn has expired. Wait for your next turn.' };
+  }
+  if (state.gameMode === 'battle' && state.phase === 'playing' && player.health <= 0 && ['boost', 'lane', 'collect', 'voice', 'cast', 'pass-turn'].includes(action.type)) return { ok: false, error: 'You are eliminated until the next heat.' };
   switch (action.type) {
+    case 'mode':
+      if (state.phase !== 'lobby') return { ok: false, error: 'Choose a mode in the lobby.' };
+      if (!['orbit', 'battle'].includes(action.mode)) return { ok: false, error: 'Choose orbit or battle.' };
+      state.gameMode = action.mode;
+      for (const pilot of state.players) {
+        if (action.mode === 'battle') restoreBattle(pilot, true);
+        else if (pilot.moves) restoreBattle(pilot, true);
+      }
+      return { ok: true };
+    case 'combat-style':
+      if (state.phase !== 'lobby') return { ok: false, error: 'Choose battle rules in the lobby.' };
+      if (!['turn-based', 'no-limits'].includes(action.style)) return { ok: false, error: 'Choose turn based or no limits.' };
+      state.combatStyle = action.style;
+      return { ok: true };
+    case 'pass-turn':
+      if (state.gameMode !== 'battle' || state.phase !== 'playing' || state.combatStyle === 'no-limits' || state.turnPlayerId !== player.id) return { ok: false, error: 'You can pass only your own battle turn.' };
+      advanceBattleTurn(state);
+      return { ok: true };
+    case 'lobby':
+      state.phase = 'lobby';
+      state.phaseEndsAt = 0;
+      state.pickups = [];
+      state.fieldEffects = [];
+      state.orbDeck = [];
+      state.rays.length = Math.min(state.rays.length, state.baseRayCount);
+      state.collisionCooldowns = {};
+      state.surge = { active: false, endsAt: 0, nextAt: 0, index: 0 };
+      if (state.gameMode === 'battle') state.battleWinnerId = null;
+      state.turnPlayerId = null;
+      state.turnEndsAt = 0;
+      for (const pilot of state.players) {
+        pilot.ready = false;
+        pilot.shopOffers = [];
+        for (const key of ['boostUntil', 'boostReadyAt', 'slingUntil', 'starlightUntil', 'chipUntil', 'slowUntil', 'frozenUntil', 'overdriveUntil', 'echoUntil', 'shieldUntil', 'gravityUntil', 'nextGravityAt', 'voiceUntil', 'voiceIntensity', 'voiceCarry']) pilot[key] = 0;
+        if (pilot.moves) restoreBattle(pilot, true);
+      }
+      emit(state, { type: 'lobby', text: 'Back in the lobby. Your build and scores are saved.' });
+      return { ok: true };
     case 'start':
       if (state.phase !== 'lobby') return { ok: false, error: 'A run is already in progress.' };
+      if (state.gameMode === 'battle') {
+        openShop(state, now, true);
+        return { ok: true };
+      }
       return { ok: startRound(state, now) };
     case 'lane':
       if (state.phase !== 'playing' && state.phase !== 'lobby') return { ok: false, error: 'Choose your lane during a round.' };
       if (!Number.isInteger(action.lane) || action.lane < 0 || action.lane >= LANE_COUNT) return { ok: false, error: 'Choose a valid orbit lane.' };
       if (state.phase === 'playing' && player.frozenUntil > now) return { ok: false, error: 'Time stop! Lane changes return when the freeze ends.' };
+      if (state.phase === 'playing' && player.stunUntil > now) return { ok: false, error: 'Stunned! Lane changes return when the stun ends.' };
       player.lane = action.lane;
       return { ok: true };
     case 'boost': {
       if (state.phase !== 'playing') return { ok: false, error: 'Orbit burst is available during a round.' };
       if (player.frozenUntil > now) return { ok: false, error: 'Time stop! Burst is available when the freeze ends.' };
+      if (player.stunUntil > now) return { ok: false, error: 'Stunned! Burst is available when the stun ends.' };
       if (now < player.boostReadyAt) return { ok: false, error: 'Orbit burst is recharging.' };
       const stats = getStats(player);
       player.boostUntil = now + stats.boostDuration * 1000;
@@ -510,6 +842,13 @@ export function applyAction(state, playerId, action, now = state.now) {
     case 'buy':
       if (state.phase !== 'shop') return { ok: false, error: 'Upgrades open between rounds.' };
       return purchase(state, player, action.upgradeId);
+    case 'buy-move':
+      if (state.gameMode !== 'battle' || state.phase !== 'shop') return { ok: false, error: 'Buy moves during a battle buy round.' };
+      return buyMove(state, player, action.moveId);
+    case 'buy-orb':
+      if (state.gameMode !== 'battle' || state.phase !== 'shop') return { ok: false, error: 'Buy orb upgrades during a battle buy round.' };
+      return buyOrbUpgrade(state, player, action.upgradeId);
+    case 'cast': return castMove(state, player, action);
     case 'reroll':
       if (state.phase !== 'shop') return { ok: false, error: 'Reroll offers between rounds.' };
       if (player.credits < player.rerollCost) return { ok: false, error: 'Not enough shards to reroll.' };
@@ -525,8 +864,11 @@ export function applyAction(state, playerId, action, now = state.now) {
     case 'reset': {
       const players = state.players.map(({ id, name, color, avatarUrl, bot }) => ({ id, name, color, avatarUrl, bot }));
       const fresh = createGame({ seed: state.seed + 1, now, roundDuration: state.roundDuration, shopDuration: state.shopDuration });
+      fresh.gameMode = state.gameMode || 'orbit';
+      fresh.combatStyle = state.combatStyle || 'turn-based';
       // Keep event IDs monotonic so existing views can see the reset event.
       fresh.eventSeq = state.eventSeq;
+      for (const key of Object.keys(state)) if (!Object.hasOwn(fresh, key)) delete state[key];
       Object.assign(state, fresh);
       for (const person of players) addPlayer(state, person);
       emit(state, { type: 'reset', text: 'Fresh run · a new orbit awaits' });
@@ -546,6 +888,8 @@ export function tickGame(state, dt, now = state.now + dt * 1000) {
     return state.events.filter((event) => event.id > seqBefore);
   }
   if (state.phase !== 'playing') return [];
+  if (finishBattleIfWon(state)) return state.events.filter((event) => event.id > seqBefore);
+  if (state.gameMode === 'battle' && state.combatStyle !== 'no-limits' && state.now >= state.turnEndsAt) advanceBattleTurn(state);
   const simulationDt = Math.max(0, Math.min(seconds, (state.phaseEndsAt - (state.now - seconds * 1000)) / 1000));
   const stepEnd = Math.min(state.now, state.phaseEndsAt);
   const stepStart = stepEnd - simulationDt * 1000;
@@ -568,6 +912,10 @@ export function tickGame(state, dt, now = state.now + dt * 1000) {
   const advances = new Map();
   for (const player of state.players) {
     player.updatedAt = state.now;
+    oldAngles.set(player.id, player.angle);
+    advances.set(player.id, 0);
+    if (state.gameMode === 'battle' && player.health <= 0) continue;
+    if (player.barrierUntil <= state.now && player.shieldHealth) player.shieldHealth = 0;
     const stats = getStats(player);
     const voiceWindow = roundStart + 15000 + Math.max(0, Math.floor((stepEnd - roundStart - 15000) / 25000)) * 25000;
     const voiceSeconds = Math.max(0, Math.min(stepEnd, voiceWindow + 8000, player.voiceUntil) - Math.max(stepStart, voiceWindow, player.lastVoiceAt)) / 1000;
@@ -582,7 +930,7 @@ export function tickGame(state, dt, now = state.now + dt * 1000) {
         emit(state, { type: 'surge', playerId: player.id, amount: voicePoints });
       }
     }
-    if (player.gravityUntil > stepStart && player.nextGravityAt <= stepEnd && player.frozenUntil <= stepStart) {
+    if (player.gravityUntil > stepStart && player.nextGravityAt <= stepEnd && player.frozenUntil <= stepStart && !(player.stunUntil > stepStart)) {
       const lastPullAt = Math.min(stepEnd, player.gravityUntil - 1);
       if (player.nextGravityAt <= lastPullAt) {
         const pulls = Math.floor((lastPullAt - player.nextGravityAt) / 750) + 1;
@@ -590,17 +938,17 @@ export function tickGame(state, dt, now = state.now + dt * 1000) {
         player.nextGravityAt += pulls * 750;
       }
     }
-    if (player.bot && state.now >= player.nextDecisionAt && player.frozenUntil <= stepStart) {
+    if (player.bot && state.now >= player.nextDecisionAt && player.frozenUntil <= stepStart && !(player.stunUntil > stepStart)) {
       if (state.now >= player.boostReadyAt && random(state) < 0.7) applyAction(state, player.id, { type: 'boost' }, state.now);
       // Bots pursue a nearby orb often enough to demonstrate ring play.
-      const target = state.pickups.filter((pickup) => pickup.expiresAt > state.now).sort((a, b) => wrap(a.angle - player.angle) - wrap(b.angle - player.angle))[0];
+      const target = state.pickups.filter((pickup) => pickup.expiresAt > state.now).sort((a, b) => (state.gameMode === 'battle' ? Number(!!orbById.get(b.type)?.light) - Number(!!orbById.get(a.type)?.light) : 0) || wrap(a.angle - player.angle) - wrap(b.angle - player.angle))[0];
       player.lane = target && random(state) < 0.7 ? target.lane : Math.floor(random(state) * LANE_COUNT);
-      player.nextDecisionAt = state.now + 3000 + random(state) * 4000;
+      player.nextDecisionAt = state.now + (state.gameMode === 'battle' ? 1000 + random(state) * 1500 : 3000 + random(state) * 4000);
     }
     const advance = travelDistance(player, stepStart, stepEnd);
     oldAngles.set(player.id, player.angle);
     advances.set(player.id, advance);
-    player.angle = wrap(player.angle + advance);
+    if (advance > 0) player.angle = wrap(player.angle + advance);
     player.orbitProgress += advance;
     while (player.orbitProgress >= TAU) {
       player.orbitProgress -= TAU;
@@ -652,6 +1000,7 @@ export function tickGame(state, dt, now = state.now + dt * 1000) {
     for (let b = a + 1; b < state.players.length; b++) {
       const first = state.players[a];
       const second = state.players[b];
+      if (state.gameMode === 'battle' && (first.health <= 0 || second.health <= 0)) continue;
       if (first.lane !== second.lane) continue;
       const key = [first.id, second.id].sort().join('|');
       if ((state.collisionCooldowns[key] || 0) > state.now) continue;
@@ -676,6 +1025,7 @@ export function tickGame(state, dt, now = state.now + dt * 1000) {
     for (const pickup of [...state.pickups]) {
       const contacts = [];
       for (const player of state.players) {
+        if (state.gameMode === 'battle' && player.health <= 0) continue;
         if (player.lane !== pickup.lane) continue;
         const oldAngle = oldAngles.get(player.id);
         const advance = advances.get(player.id);
@@ -699,7 +1049,28 @@ export function tickGame(state, dt, now = state.now + dt * 1000) {
       angle: Math.round(random(state) * TAU * 100000) / 100000,
       lane: Math.floor(random(state) * LANE_COUNT), expiresAt: state.now + ORB_LIFETIME,
     });
-    state.nextPickupAt = state.now + ORB_INTERVAL;
+    state.nextPickupAt = state.now + (state.gameMode === 'battle' ? 750 : ORB_INTERVAL);
+  }
+  if (state.gameMode === 'battle' && state.now < state.phaseEndsAt) {
+    for (const player of state.players) {
+      if (!player.bot || player.health <= 0 || player.castReadyAt > state.now || player.stunUntil > state.now || player.frozenUntil > state.now) continue;
+      const turnBased = state.combatStyle !== 'no-limits';
+      if (turnBased && state.turnPlayerId !== player.id) continue;
+      const rivals = state.players.filter((rival) => rival.id !== player.id && rival.health > 0);
+      const available = MOVE_CATALOG.filter((move) => moveLevel(player, move.id) && (!turnBased || (player.movePP[move.id] > 0 && player.lightPoints >= getMoveStats(player, move.id).lightCost)));
+      const move = available.find((move) => move.type === 'heal' && player.health <= 65)
+        || available.find((move) => move.type === 'shield' && !player.shieldHealth && player.health < 70)
+        || available.find((move) => move.type === 'reflect' && player.reflectUntil <= state.now && rivals.some((rival) => rival.lightPoints >= 3) && random(state) < 0.15)
+        || available.find((move) => move.type === 'stun' && random(state) < 0.3)
+        || available.find((move) => move.type === 'attack');
+      if (move && (move.target === 'self' || rivals.length)) {
+        const target = move.target === 'self' ? player : rivals[Math.floor(random(state) * rivals.length)];
+        castMove(state, player, { moveId: move.id, targetId: target.id });
+        if (state.phase !== 'playing') return state.events.filter((event) => event.id > seqBefore);
+      } else if (turnBased) {
+        advanceBattleTurn(state);
+      }
+    }
   }
   if (state.now >= state.phaseEndsAt) openShop(state, state.now);
   return state.events.filter((event) => event.id > seqBefore);

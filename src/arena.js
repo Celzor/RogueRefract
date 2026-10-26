@@ -3,6 +3,8 @@ import { LANE_COUNT, LANE_RADII, MAX_RAYS, ORB_CATALOG, getPlayerSpeed, getRaySp
 const TAU = Math.PI * 2;
 const SPECTRUM = ['#fc6d9d', '#ffad69', '#ffe39a', '#b7f7b1', '#7ee8f2', '#9b9bff', '#d99dff'];
 const ORB_COLORS = Object.fromEntries(ORB_CATALOG.map(({ id, color }) => [id, color]));
+const CAST_COLORS = { 'photon-strike': '#ff8e91', 'mending-light': '#bcf6cf', 'mirror-veil': '#6de9d3', 'static-pulse': '#8be0fa', 'aegis-shell': '#ffdc89' };
+const LIGHT_ORBS = { light: 2, 'light-surge': 4, 'light-nova': 6 };
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
 /** The same tilted avatar orbit as Refract's voice stage, drawn in logical pixels. */
@@ -19,6 +21,7 @@ export class OrbitArena {
     this.images = new Map();
     this.positions = new Map();
     this.displayLanes = new Map();
+    this.castBeams = [];
     this.reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.logo = new Image();
     // document.baseURI is the repo root, including GitHub Pages project subpaths.
@@ -53,6 +56,10 @@ export class OrbitArena {
 
   emit(event, state, selfId) {
     const p = state.players.find((p) => p.id === event.playerId);
+    if (p && state.gameMode === 'battle' && ['cast', 'knockout', 'winner'].includes(event.type)) {
+      this.emitBattle(event, state, p);
+      return;
+    }
     if (!p || !['ray', 'collision', 'revolution', 'levelup', 'boost', 'collect', 'surge'].includes(event.type)) return;
     const position = this.positions.get(p.id) || this.project(p.angle, p.lane);
     const color = event.critical ? '#ffe09d' : event.type === 'levelup' ? '#d5b2ff' : event.type === 'collect' ? ORB_COLORS[event.pickupType] || p.color : p.color;
@@ -73,6 +80,28 @@ export class OrbitArena {
     this.particles = this.particles.slice(-220);
   }
 
+  emitBattle(event, state, caster) {
+    const target = state.players.find((p) => p.id === event.otherId) || caster;
+    const position = this.positions.get(target.id) || this.project(target.angle, target.lane);
+    const color = event.type === 'knockout' ? '#ff8e91' : event.type === 'winner' ? '#ffdc89' : CAST_COLORS[event.moveId] || caster.color;
+    const now = performance.now();
+    this.flashes.set(target.id, { until: now + 650, color });
+    if (event.type === 'cast') {
+      this.castBeams.push({ casterId: caster.id, targetId: target.id, reflectorId: event.reflectedBy, color, startedAt: now, reflected: !!event.reflected });
+      this.castBeams = this.castBeams.slice(-12);
+    }
+    const text = event.type === 'knockout' ? 'ELIMINATED' : event.type === 'winner' ? 'WINNER!' : event.moveId === 'mending-light' ? `+${Math.round(event.amount || 0)} HP` : event.moveId === 'mirror-veil' ? 'REFLECT READY' : event.moveId === 'aegis-shell' ? `+${Math.round(event.amount || 0)} SHIELD` : `${event.reflected ? 'REFLECT! ' : ''}${event.amount ? `−${Math.round(event.amount)} HP` : 'STUN'}`;
+    this.floats.push({ ...position, life: 1.3, color, text, battle: true });
+    this.floats = this.floats.slice(-20);
+    if (!this.reducedMotion) {
+      for (let i = 0; i < 14; i++) {
+        const angle = i * TAU / 14, speed = 25 + Math.random() * 45;
+        this.particles.push({ ...position, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 1, color });
+      }
+      this.particles = this.particles.slice(-220);
+    }
+  }
+
   render(state, selfId, now, extrapolation = 0) {
     const c = this.ctx;
     if (!c) return;
@@ -82,6 +111,8 @@ export class OrbitArena {
     this.lastFrame = now;
     const preview = state.phase === 'lobby';
     const active = state.phase === 'playing';
+    this.battleMode = state.gameMode === 'battle';
+    if (!active) this.castBeams = [];
     const logicalNow = state.now + clamp(extrapolation, 0, 0.65) * 1000;
     this.logicalNow = logicalNow;
     for (const [id, effect] of this.levelUps) {
@@ -143,15 +174,15 @@ export class OrbitArena {
     const players = state.players.map((p, index) => {
       let angle = Number.isFinite(p.angle) ? p.angle : index * TAU / Math.max(1, state.players.length);
       if (preview) angle = index * TAU / Math.max(1, state.players.length) + time * 0.16;
-      else if (active) {
+      else if (active && !(this.battleMode && (p.health <= 0 || p.stunUntil > logicalNow))) {
         angle += getPlayerSpeed(p, logicalNow) * clamp(extrapolation, 0, 0.65);
       }
       const previousLane = this.displayLanes.get(p.id) ?? p.lane;
-      const displayLane = active && p.gravityUntil > logicalNow ? previousLane + (p.lane - previousLane) * (1 - Math.exp(-dt * 13)) : p.lane;
+      const displayLane = this.battleMode && p.health <= 0 ? previousLane : active && p.gravityUntil > logicalNow ? previousLane + (p.lane - previousLane) * (1 - Math.exp(-dt * 13)) : p.lane;
       this.displayLanes.set(p.id, displayLane);
       const position = this.project(angle, displayLane);
       this.positions.set(p.id, position);
-      if ((active || preview) && !(active && p.frozenUntil > logicalNow)) {
+      if ((active || preview) && !(active && (p.frozenUntil > logicalNow || (this.battleMode && (p.health <= 0 || p.stunUntil > logicalNow))))) {
         c.beginPath();
         for (let j = 0; j < 25; j++) {
           const q = this.project(angle - j * 0.022, displayLane);
@@ -187,11 +218,43 @@ export class OrbitArena {
     (state.pickups || []).forEach((pickup) => {
       this.drawOrb(pickup, time, pickup.lane === me?.lane);
     });
+    this.drawCastBeams(now);
     this.particles.forEach((p) => { p.life -= dt * 1.7; p.x += p.vx * dt; p.y += p.vy * dt; c.globalAlpha = Math.max(0, p.life); c.fillStyle = p.color; c.fillRect(p.x, p.y, 2.5, 2.5); });
     this.particles = this.particles.filter((p) => p.life > 0);
-    this.floats.forEach((p) => { p.life -= dt * 0.8; p.y -= dt * 26; c.globalAlpha = Math.max(0, Math.min(1, p.life * 2)); c.textAlign = 'center'; c.fillStyle = p.color; c.font = '700 12px Inter, system-ui'; c.fillText(p.text, p.x, p.y - 40); });
+    this.floats.forEach((p) => { p.life -= dt * 0.8; if (!(p.battle && this.reducedMotion)) p.y -= dt * 26; c.globalAlpha = Math.max(0, Math.min(1, p.life * 2)); c.textAlign = 'center'; c.fillStyle = p.color; c.font = `700 ${this.width < 480 && p.battle ? 10 : 12}px Inter, system-ui`; c.fillText(p.text, p.x, p.y - 40); });
     this.floats = this.floats.filter((p) => p.life > 0);
     c.globalAlpha = 1;
+  }
+
+  drawCastBeams(now) {
+    const c = this.ctx;
+    const duration = this.reducedMotion ? 500 : 850;
+    this.castBeams = this.castBeams.filter((beam) => now - beam.startedAt < duration);
+    for (const beam of this.castBeams) {
+      const source = this.positions.get(beam.casterId), target = this.positions.get(beam.targetId);
+      if (!source || !target) continue;
+      const progress = clamp((now - beam.startedAt) / duration, 0, 1);
+      c.save(); c.globalAlpha = this.reducedMotion ? 0.65 : Math.min(1, (1 - progress) * 2);
+      c.strokeStyle = beam.color; c.lineWidth = 2; c.lineCap = 'round';
+      if (beam.casterId === beam.targetId && !beam.reflectorId) {
+        const radius = (this.width < 480 ? 24 : 32) + (this.reducedMotion ? 0 : progress * 12);
+        c.beginPath(); c.arc(target.x, target.y, radius, 0, TAU); c.stroke();
+      } else {
+        const reflector = this.positions.get(beam.reflectorId);
+        const destination = reflector || target;
+        c.beginPath(); c.moveTo(source.x, source.y); c.lineTo(destination.x, destination.y); c.stroke();
+        if (reflector) {
+          c.setLineDash([4, 4]); c.strokeStyle = '#6de9d3';
+          c.beginPath(); c.moveTo(reflector.x, reflector.y); c.quadraticCurveTo((source.x + reflector.x) / 2 - 15, (source.y + reflector.y) / 2 - 18, target.x, target.y); c.stroke();
+        }
+        if (!this.reducedMotion) {
+          const travel = Math.min(1, progress * 2);
+          c.fillStyle = beam.color; c.shadowColor = beam.color; c.shadowBlur = 9;
+          c.beginPath(); c.arc(source.x + (destination.x - source.x) * travel, source.y + (destination.y - source.y) * travel, 3, 0, TAU); c.fill();
+        }
+      }
+      c.restore();
+    }
   }
 
   drawOrb(pickup, time, selected) {
@@ -207,7 +270,17 @@ export class OrbitArena {
     c.shadowBlur = 0;
     c.fillStyle = `${color}18`; c.fill();
     c.strokeStyle = color; c.fillStyle = color; c.lineWidth = 1.5; c.lineCap = 'round'; c.lineJoin = 'round';
-    if (pickup.type === 'beam') {
+    if (LIGHT_ORBS[pickup.type]) {
+      const value = LIGHT_ORBS[pickup.type];
+      c.textAlign = 'center'; c.font = '800 10px Inter, system-ui';
+      c.fillText(`+${value}`, 0, 0);
+      c.font = '700 6px ui-monospace,monospace'; c.fillText('LP', 0, 8);
+      if (value > 2) {
+        c.strokeStyle = `${color}90`; c.lineWidth = 0.8;
+        c.beginPath(); c.arc(0, 0, size - 3, -Math.PI * 0.8, -Math.PI * 0.2); c.stroke();
+        if (value === 6) { c.beginPath(); c.arc(0, 0, size - 3, Math.PI * 0.2, Math.PI * 0.8); c.stroke(); }
+      }
+    } else if (pickup.type === 'beam') {
       c.beginPath(); c.arc(0, 0, 3, 0, TAU); c.stroke();
       c.beginPath();
       for (let i = 0; i < 8; i++) {
@@ -267,11 +340,17 @@ export class OrbitArena {
     const { x, y } = position;
     const self = p.id === selfId;
     const s = this.width < 480 ? 30 : 42;
+    const knockedOut = this.battleMode && p.health <= 0;
+    const stunned = this.battleMode && !knockedOut && p.stunUntil > this.logicalNow;
+    const reflecting = this.battleMode && !knockedOut && p.reflectUntil > this.logicalNow;
+    const barrier = this.battleMode && !knockedOut && p.barrierUntil > this.logicalNow && p.shieldHealth > 0;
     const frozen = p.frozenUntil > this.logicalNow;
     const slowed = !frozen && p.slowUntil > this.logicalNow;
     const shielded = p.shieldUntil > this.logicalNow;
     const gravity = p.gravityUntil > this.logicalNow;
-    const effectColor = frozen ? ORB_COLORS.clock : slowed ? ORB_COLORS.ice : null;
+    const effectColor = stunned ? CAST_COLORS['static-pulse'] : frozen ? ORB_COLORS.clock : slowed ? ORB_COLORS.ice : null;
+    c.save();
+    if (knockedOut) c.globalAlpha = 0.4;
     const levelUp = this.levelUps.get(p.id);
     if (levelUp) this.drawLevelUp(position, s, levelUp, now);
     if (gravity) this.drawGravityPull(position, s, now / 1000);
@@ -297,9 +376,26 @@ export class OrbitArena {
       c.save(); c.strokeStyle = `${ORB_COLORS.shield}85`; c.fillStyle = `${ORB_COLORS.shield}08`; c.lineWidth = 1.3;
       c.beginPath(); c.arc(x, y, s * 0.78, 0, TAU); c.fill(); c.stroke(); c.restore();
     }
+    if (reflecting) {
+      c.save(); c.strokeStyle = '#6de9d3'; c.fillStyle = '#6de9d30c'; c.lineWidth = 1.6;
+      c.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const angle = i * TAU / 6 - Math.PI / 2;
+        const px = x + Math.cos(angle) * s * 0.82, py = y + Math.sin(angle) * s * 0.82;
+        if (!i) c.moveTo(px, py); else c.lineTo(px, py);
+      }
+      c.closePath(); c.fill(); c.stroke(); c.restore();
+    }
+    if (barrier) {
+      c.save(); c.strokeStyle = '#ffdc89'; c.fillStyle = '#ffdc8910'; c.lineWidth = 2;
+      c.beginPath(); c.arc(x, y, s * 0.72, 0, TAU); c.fill(); c.stroke();
+      c.font = '700 8px ui-monospace,monospace'; c.textAlign = 'center'; c.fillStyle = '#ffdc89';
+      c.fillText(`+${Math.ceil(p.shieldHealth)}`, x, y - s * 0.82);
+      c.restore();
+    }
     const flash = this.flashes.get(p.id);
     if (flash?.until > now) {
-      c.beginPath(); c.arc(x, y, s * 0.8 + (1 - (flash.until - now) / 650) * 18, 0, TAU);
+      c.beginPath(); c.arc(x, y, this.reducedMotion ? s * 0.83 : s * 0.8 + (1 - (flash.until - now) / 650) * 18, 0, TAU);
       c.strokeStyle = `${flash.color}80`; c.lineWidth = 2; c.stroke();
     }
     c.save();
@@ -329,7 +425,8 @@ export class OrbitArena {
       c.fillStyle = '#171722'; c.strokeStyle = effectColor; c.lineWidth = 1.3;
       c.beginPath(); c.arc(bx, by, 7, 0, TAU); c.fill(); c.stroke();
       c.beginPath();
-      if (frozen) { c.moveTo(bx, by - 4); c.lineTo(bx, by); c.lineTo(bx + 3, by + 2); }
+      if (stunned) { c.moveTo(bx + 1, by - 4); c.lineTo(bx - 3, by); c.lineTo(bx, by); c.lineTo(bx - 1, by + 4); c.lineTo(bx + 3, by - 1); }
+      else if (frozen) { c.moveTo(bx, by - 4); c.lineTo(bx, by); c.lineTo(bx + 3, by + 2); }
       else {
         for (let i = 0; i < 3; i++) {
           const a = i * Math.PI / 3;
@@ -340,9 +437,33 @@ export class OrbitArena {
     }
     c.textAlign = 'center'; c.fillStyle = self ? '#e7f6ed' : '#c3bccc'; c.font = `${self ? 700 : 500} 10px Inter, system-ui`;
     const name = self ? (p.name === 'You' ? 'YOU' : `${p.name.slice(0, 10)} · YOU`) : p.name.slice(0, 12);
-    c.fillText(name, x, y + s / 2 + 17);
-    if (p.bot) { c.font = '8px ui-monospace,monospace'; c.fillStyle = '#716b7d'; c.fillText('BOT', x, y + s / 2 + 29); }
+    c.fillText(name, x, y + s / 2 + (this.battleMode ? 24 : 17));
+    if (p.bot) { c.font = '8px ui-monospace,monospace'; c.fillStyle = '#716b7d'; c.fillText('BOT', x, y + s / 2 + (this.battleMode ? 36 : 29)); }
     if (self) { c.fillStyle = p.color; c.beginPath(); c.moveTo(x - 3, y - s / 2 - 8); c.lineTo(x + 3, y - s / 2 - 8); c.lineTo(x, y - s / 2 - 4); c.fill(); }
+    c.restore();
+    c.restore();
+    if (this.battleMode) this.drawHealth(p, position, s, knockedOut);
+  }
+
+  drawHealth(p, { x, y }, size, knockedOut) {
+    const c = this.ctx;
+    const health = clamp(Number.isFinite(p.health) ? p.health : 100, 0, p.maxHealth || 100);
+    const fraction = health / (p.maxHealth || 100);
+    const width = size + 6, top = y + size / 2 + 6;
+    c.save();
+    c.fillStyle = '#11121be6'; c.strokeStyle = '#ffffff28'; c.lineWidth = 0.6;
+    c.beginPath(); c.roundRect(x - width / 2, top, width, 9, 3); c.fill(); c.stroke();
+    if (fraction > 0) {
+      c.fillStyle = fraction > 0.5 ? '#bcf6cf' : fraction > 0.25 ? '#ffdc89' : '#ff8e91';
+      c.beginPath(); c.roundRect(x - width / 2, top, Math.max(2, width * fraction), 9, 3); c.fill();
+    }
+    c.textAlign = 'center'; c.font = '800 8px ui-monospace,monospace';
+    c.fillStyle = '#fff'; c.strokeStyle = '#13141a'; c.lineWidth = 2;
+    c.strokeText(`${Math.ceil(health)} HP`, x, top + 7); c.fillText(`${Math.ceil(health)} HP`, x, top + 7);
+    if (knockedOut) {
+      c.textAlign = 'center'; c.fillStyle = '#ffb8bb'; c.font = '800 11px Inter,system-ui';
+      c.fillText('OUT', x, y + 4);
+    }
     c.restore();
   }
 
@@ -443,5 +564,5 @@ export class OrbitArena {
     c.restore();
   }
 
-  destroy() { this.resizeObserver.disconnect(); this.levelUps.clear(); this.displayLanes.clear(); }
+  destroy() { this.resizeObserver.disconnect(); this.levelUps.clear(); this.displayLanes.clear(); this.castBeams = []; }
 }

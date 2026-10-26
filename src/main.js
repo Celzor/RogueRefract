@@ -3,6 +3,7 @@ import { OrbitArena } from './arena.js';
 import { createActivityBridge } from './activity.js';
 import { GameAudio } from './audio.js';
 import { VoiceMeter } from './microphone.js';
+import { MOVE_CATALOG, ORB_UPGRADE_CATALOG, getMoveStats, getMoveCost, getMoveUnlockRound, getOrbUpgradeCost, getOrbUpgradeUnlockRound, getLightCapacity } from './game.js';
 
 const paths = {
   orbit:'<ellipse cx="12" cy="12" rx="10" ry="5" transform="rotate(-30 12 12)"/><circle cx="12" cy="12" r="2"/><circle cx="20" cy="7" r="1.5" fill="currentColor"/>',
@@ -45,7 +46,7 @@ document.getElementById('app').innerHTML = `
 <div class="app-shell">
   <header class="topbar">
     <div class="brand"><span class="brand-mark">${icon('prism')}</span><span class="brand-name">rogue<span>refract</span></span><span class="brand-version">EARLY ORBIT</span></div>
-    <div class="top-actions"><span class="connection-pill"><i class="status-dot"></i><span id="connection-label">SOLO PRACTICE</span></span><button id="details-button" class="secondary-button details-button">${icon('chart')}<span>Run details</span></button><button id="sound-button" class="icon-button" aria-label="Mute sound effects" title="Toggle sound">${icon(profile.sound ? 'sound' : 'mute')}</button><button id="fullscreen-button" class="icon-button" aria-label="Toggle fullscreen" title="Fullscreen (F)">${icon('expand')}</button><button id="settings-button" class="icon-button" aria-label="Settings" title="Settings">${icon('settings')}</button></div>
+    <div class="top-actions"><span class="connection-pill"><i class="status-dot"></i><span id="connection-label">SOLO PRACTICE</span></span><button id="lobby-button" class="secondary-button" aria-label="Back to lobby" hidden>${icon('arrow')}<span>Back to lobby</span></button><button id="details-button" class="secondary-button details-button">${icon('chart')}<span>Run details</span></button><button id="sound-button" class="icon-button" aria-label="Mute sound effects" title="Toggle sound">${icon(profile.sound ? 'sound' : 'mute')}</button><button id="fullscreen-button" class="icon-button" aria-label="Toggle fullscreen" title="Fullscreen (F)">${icon('expand')}</button><button id="settings-button" class="icon-button" aria-label="Settings" title="Settings">${icon('settings')}</button></div>
   </header>
   <main class="play-layout">
     <section class="intro"><div><div class="eyebrow">FIVE RINGS. NO BRAKES.</div><h1>A little chaos. <em>A lot of orbit.</em></h1></div><div class="round-summary"><div><div class="mini-label">HEAT</div><div class="round-number"><b id="round-number">01</b></div></div><div class="timer-box"><div class="mini-label" id="timer-label">ROUND TIME</div><div id="timer" class="timer">01:00</div></div></div></section>
@@ -61,18 +62,26 @@ document.getElementById('app').innerHTML = `
         <div class="arena-stage">
           <canvas id="arena" class="arena-canvas" tabindex="0" aria-label="Five orbit rings. Use A and D or 1 through 5 to change rings, Space to burst. Absorb power-up orbs by touching them with your avatar.">Your browser needs canvas support to display the orbit.</canvas>
           <div class="arena-coordinate">FIELD <span>R-01</span><br><span id="field-phase">AWAITING LAUNCH</span></div><div class="arena-coordinate right"><span id="pilot-count">06</span> PILOTS<br>MOVE TO ABSORB ORBS</div>
+          <div class="battle-roster" id="battle-roster" aria-label="Player health" hidden></div>
           <div class="levelup-banner" id="levelup-banner" role="status" aria-live="polite" hidden><span class="levelup-emblem">${icon('sparkles')}</span><span><strong id="levelup-title">LEVEL UP</strong><small>FREE UPGRADE BANKED</small></span><b id="levelup-number">02</b></div>
           <div class="arena-overlay"><span class="arena-message" id="arena-message">${icon('sparkles')} Find your ring. Catch the chaos.</span></div>
           <section class="upgrade-section" id="shop" aria-labelledby="shop-title" tabindex="-1" hidden>
             <div class="upgrade-header"><div><div class="eyebrow" id="shop-tag">BUY ROUND</div><div class="upgrade-heading"><h2 id="shop-title">Build something ridiculous.</h2></div><p id="shop-subtitle">Choose your next advantage.</p></div><div class="shop-actions"><span class="free-token" id="free-tokens" hidden></span><button class="secondary-button" id="reroll-button">${icon('refresh')}<span id="reroll-label">Reroll / 35</span></button></div></div>
+            <div class="shop-tabs" id="shop-tabs" role="group" aria-label="Shop category" hidden><button data-shop-tab="moves" aria-pressed="false">Battle moves</button><button data-shop-tab="orbs" aria-pressed="false">Light orbs</button><button data-shop-tab="orbit" aria-pressed="true">Orbit upgrades</button></div>
             <div class="upgrade-grid" id="upgrade-grid"></div>
             <div class="shop-bottom"><span class="shop-locked-note" id="shop-note">${icon('gem')} +35 END-OF-HEAT SHARDS</span><div><button class="text-button" id="results-button">Heat results ${icon('chart')}</button><button class="text-button" id="library-button">Upgrade index ${icon('arrow')}</button></div></div>
           </section>
         </div>
         <div class="arena-controls"><div class="lane-controls"><span class="lane-caption">RING <b id="current-ring">1</b></span><div class="lane-group" role="group" aria-label="Orbit ring">${Array.from({length:5},(_,i)=>`<button data-lane="${i}" aria-label="Ring ${i+1}" aria-pressed="${i===0}" title="Ring ${i+1} (press ${i+1})"><span>${i+1}</span></button>`).join('')}</div><span class="lane-hint">A / D to shift</span></div><button class="boost-button" id="boost-button">${icon('zap')}<span id="boost-label">Orbit burst</span><kbd class="keycap">SPACE</kbd></button></div>
+        <section class="battle-console" id="battle-console" aria-label="Battle controls" hidden>
+          <div class="battle-status-row"><div class="health-meter"><span>YOUR HEALTH <strong id="health-value">100 / 100</strong></span><div class="health-track" role="progressbar" aria-label="Your health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" id="health-track"><i id="health-fill"></i></div></div><div class="light-meter"><small>LIGHT POINTS</small><strong id="light-points">0 / 20 LP</strong></div><span id="turn-status"></span></div>
+          <div class="battle-action-row"><label class="target-picker"><span>1. Choose a target</span><select id="battle-target" aria-label="Choose a battle target"><option value="">Choose before every cast</option></select></label><p id="battle-hint">2. Choose a move. Collect glowing orbs for LP.</p><button id="pass-turn-button" class="secondary-button" hidden>Pass turn</button></div>
+          <div class="battle-moves" id="battle-moves">${MOVE_CATALOG.map((move)=>`<button class="move-button" data-cast="${move.id}" style="--move-color:${move.color}" disabled><strong>${escape(move.name)}</strong><span></span><small>Buy in the shop</small></button>`).join('')}</div>
+          <p class="battle-feedback" id="battle-feedback" role="status" aria-live="polite">Touch Light orbs to fuel your moves.</p>
+        </section>
         <div class="arena-tip"><span>${icon('info')} <b>Move to an orb to absorb it.</b> Stack beams. Ice your rivals. Steal time.</span><span>1-5 select a ring</span></div>
       </div>
-      <div class="play-bar"><div><h3 class="play-bar-title" id="play-title">Your next obsession starts here.</h3><p id="play-description">60-second heats. Temporary power-ups. Absolute chaos.</p></div><button id="play-button" class="primary-button"><span id="play-label">Enter the orbit</span>${icon('arrow')}</button></div>
+      <div class="play-bar"><div><h3 class="play-bar-title" id="play-title">Your next obsession starts here.</h3><p id="play-description">60-second heats. Temporary power-ups. Absolute chaos.</p><div class="mode-picker" id="mode-picker" role="group" aria-label="Game mode"><button data-mode="orbit" aria-pressed="true">${icon('orbit')} Orbit</button><button data-mode="battle" aria-pressed="false">${icon('swords')} Battle</button><button id="battle-guide-button" class="text-button" aria-label="Battle guide">${icon('info')}</button></div><div class="combat-style-picker" id="combat-style-picker" role="group" aria-label="Combat style" hidden><button data-combat-style="turn-based" aria-pressed="true">Turn based · LP + PP</button><button data-combat-style="no-limits" aria-pressed="false">No limits · cooldowns</button></div></div><button id="play-button" class="primary-button"><span id="play-label">Enter the orbit</span>${icon('arrow')}</button></div>
     </section>
   </main>
   <footer class="footer"><span>NO FINISH LINE. JUST ONE MORE REVOLUTION.</span><span class="footer-refract"><img src="./assets/refract-icon.png" alt="" /> MADE FOR <a href="https://refract.chat" target="_blank" rel="noreferrer">REFRACT.CHAT</a><button class="text-button" id="help-button">How to play ${icon('info')}</button></span></footer>
@@ -106,6 +115,10 @@ let errorAt = 0;
 let nextVoiceAt = 0;
 let micBusy = false;
 let levelupTimer;
+let shopTab = 'orbit';
+let selectedTarget = '';
+let targetSignature = '';
+let battleRosterSignature = '';
 
 function addPracticeRoster() {
   addPlayer(state, { id:'you', name:profile.name, color:'#bcf6cf' });
@@ -192,6 +205,17 @@ function processEvents() {
       if (p) { profile.completed++; profile.bestHeat = Math.max(profile.bestHeat, p.roundScore); profile.best = Math.max(profile.best, p.score); saveProfile(); }
       $('levelup-banner').hidden = true;
     }
+    if (event.type === 'cast' && recent) {
+      const caster = state.players.find((pilot)=>pilot.id===event.playerId);
+      const target = state.players.find((pilot)=>pilot.id===event.otherId);
+      put('battle-feedback', event.text || `${caster?.name || 'Pilot'} used ${MOVE_CATALOG.find((move)=>move.id===event.moveId)?.name || 'a move'} on ${target?.name || 'a pilot'}.`);
+      if (event.playerId===selfId) { selectedTarget=''; $('battle-target').value=''; }
+      if (event.playerId===selfId || event.otherId===selfId) audio.play('collision');
+    }
+    if (event.type === 'knockout' && recent) toast(event.text || 'A pilot has been eliminated.');
+    if (event.type === 'winner' && recent) { audio.play('roundend'); toast(`${state.players.find((pilot)=>pilot.id===event.playerId)?.name || 'Last pilot'}: Winner winner chicken dinner!`, 'success'); }
+    if (event.type === 'round-start' || event.type === 'lobby') { selectedTarget=''; targetSignature=''; put('battle-feedback','Touch Light orbs to fuel your moves.'); }
+    if (event.type === 'lobby') { clearTimeout(levelupTimer); $('levelup-banner').hidden=true; }
     if (event.type === 'reset') { clearTimeout(levelupTimer); $('levelup-banner').hidden = true; saveProfile(); toast('Fresh run. A new orbit awaits.'); }
   }
 }
@@ -234,7 +258,7 @@ bridge = createActivityBridge({
   },
   onAction(fromId, action) {
     const id = String(fromId);
-    if (['start','reset'].includes(action.type) && id !== String(bridge.participants[0]?.id)) return;
+    if (['start','reset','mode','combat-style','lobby'].includes(action.type) && id !== String(bridge.participants[0]?.id)) return;
     const result = applyAction(state, id, action, Date.now());
     if (!result.ok && id === selfId && action.type !== 'voice') { audio.play('error'); toast(result.error, 'error'); }
     if (result.ok && action.type !== 'voice') { processEvents(); publish(); renderUI(); }
@@ -256,13 +280,102 @@ function upgradeCard(item, p, library = false) {
   return `<article class="upgrade-card ${available ? 'available' : ''}" style="--rarity:${rarityColors[item.rarity]}"><div class="upgrade-card-top"><span class="upgrade-icon">${icon(item.icon)}</span><span class="rarity">${item.rarity.toUpperCase()}</span></div><h3>${escape(item.name)}</h3><p>${escape(item.description)}</p>${library ? `<div class="upgrade-card-footer"><span>${escape(item.category)} · MAX ${item.maxLevel}</span><span>${item.cost} SHARDS</span></div>` : `<div class="upgrade-card-footer"><span>${available ? `${level ? `LV ${level} → ${level + 1}` : 'ADD TO YOUR BUILD'}` : `${icon('lock')} BETWEEN ROUNDS`}</span><button class="buy-button ${available && free ? 'free' : ''}" data-buy="${item.id}" ${!available || !affordable ? 'disabled' : ''} aria-label="${free && available ? 'Claim' : 'Buy'} ${escape(item.name)}">${available && free ? icon('sparkles') + 'Free choice' : icon('gem') + format(price)}</button></div>`}</article>`;
 }
 
+function moveShopCard(move, p) {
+  const level = p.moves?.[move.id] || 0;
+  const next = getMoveStats(p, move.id, Math.min(move.maxLevel,level+1));
+  const maxed = level >= move.maxLevel;
+  const unlock = getMoveUnlockRound(p, move.id);
+  const locked = unlock > Math.max(1, state.round + 1);
+  const free = p.upgradeTokens > 0;
+  const price = getMoveCost(p, move.id);
+  const allowed = snapshotReady && !maxed && !locked && (free || p.credits >= price);
+  const effect = move.type === 'attack' ? `${next.power} damage` : move.type === 'heal' ? `${next.power} HP heal` : move.type === 'shield' ? `${next.power} shield / ${next.duration}s` : move.type === 'reflect' ? `Reflect next hit / ${next.duration}s` : `${next.power} damage / ${next.duration}s stun`;
+  const resources=state.combatStyle==='no-limits' ? '2.5s cooldown' : `${next.lightCost} LP · ${next.maxPP} PP / heat`;
+  return `<article class="upgrade-card move-shop-card" style="--rarity:${move.color}"><div class="upgrade-card-top"><span class="upgrade-icon">${icon(move.icon)}</span><span class="rarity">${escape(move.type.toUpperCase())} · RANK ${level}/${move.maxLevel}</span></div><h3>${escape(move.name)} ${level ? `<small>R${level}</small>` : ''}</h3><p>${escape(move.description)} <span class="move-detail">${level && !maxed ? `Next rank: ` : ''}${effect} · ${resources}</span></p><div class="upgrade-card-footer"><span>${maxed ? 'MAX RANK' : locked ? `UNLOCKS FOR HEAT ${unlock}` : level ? `RANK ${level} → ${level+1}` : 'LEARN RANK 1'}</span><button class="buy-button ${free ? 'free' : ''}" data-buy-move="${move.id}" ${allowed ? '' : 'disabled'} aria-label="${level ? 'Upgrade' : 'Buy'} ${escape(move.name)}">${maxed ? 'Max' : locked ? `Heat ${unlock}` : free ? 'Free choice' : `${icon('gem')}${format(price)}`}</button></div></article>`;
+}
+
+function orbShopCard(item, p) {
+  const level = p.orbUpgrades?.[item.id] || 0;
+  const maxed = level >= item.maxLevel;
+  const unlock=getOrbUpgradeUnlockRound(p,item.id);
+  const locked = unlock > Math.max(1,state.round+1);
+  const price = getOrbUpgradeCost(p, item.id);
+  const free = p.upgradeTokens > 0;
+  const allowed = snapshotReady && !maxed && !locked && (free || p.credits >= price);
+  return `<article class="upgrade-card" style="--rarity:#f5d584"><div class="upgrade-card-top"><span class="upgrade-icon">${icon('sun')}</span><span class="rarity">LIGHT ORBS · RANK ${level}/${item.maxLevel}</span></div><h3>${escape(item.name)}</h3><p>${escape(item.description)}</p><div class="upgrade-card-footer"><span>${maxed ? 'MAX RANK' : locked ? `UNLOCKS FOR HEAT ${level+1}` : `RANK ${level} → ${level+1}`}</span><button class="buy-button ${free ? 'free' : ''}" data-buy-orb="${item.id}" ${allowed ? '' : 'disabled'} aria-label="Buy ${escape(item.name)}">${maxed ? 'Max' : locked ? `Heat ${level+1}` : free ? 'Free choice' : `${icon('gem')}${format(price)}`}</button></div></article>`;
+}
+
+function renderBattle(p, now, spectator) {
+  const active = state.gameMode === 'battle' && state.phase === 'playing';
+  $('battle-console').hidden = !active;
+  $('battle-roster').hidden = !active;
+  if (!active) return;
+  const health = Math.max(0, p.health ?? 100);
+  put('health-value', `${health} / 100${p.shieldHealth > 0 && p.barrierUntil > now ? ` +${p.shieldHealth} shield` : ''}`);
+  $('health-fill').style.width=`${health}%`;
+  $('health-fill').style.background=health>50 ? '#bcf6cf' : health>25 ? '#f5d584' : '#ff8e91';
+  $('health-track').setAttribute('aria-valuenow',String(health));
+  const unlimited=state.combatStyle==='no-limits';
+  const myTurn=unlimited || state.turnPlayerId===selfId;
+  put('light-points', unlimited ? 'Cooldown only' : `${p.lightPoints || 0} / ${getLightCapacity(p)} LP`);
+  const turnPlayer=state.players.find((pilot)=>pilot.id===state.turnPlayerId);
+  put('turn-status',unlimited ? 'NO LIMITS · 2.5s COOLDOWN' : `${myTurn ? 'YOUR TURN' : `${turnPlayer?.name || 'Next pilot'} acts`} · ${Math.max(0,Math.ceil((state.turnEndsAt-now)/1000))}s`);
+  const rosterSignature = JSON.stringify(state.players.map((pilot)=>[pilot.id,pilot.name,pilot.health,pilot.shieldHealth,pilot.barrierUntil > now]));
+  if (rosterSignature !== battleRosterSignature) {
+    battleRosterSignature=rosterSignature;
+    $('battle-roster').innerHTML=state.players.map((pilot)=>`<div class="battle-pilot ${pilot.health <= 0 ? 'eliminated' : ''} ${pilot.id===selfId ? 'self' : ''}"><span class="battle-pilot-name">${escape(pilot.name)}${pilot.id===selfId ? ' (you)' : ''}</span><strong>${pilot.health <= 0 ? 'OUT' : `${pilot.health} HP`}${pilot.shieldHealth > 0 && pilot.barrierUntil > now ? ` +${pilot.shieldHealth}` : ''}</strong><div class="battle-pilot-track" role="progressbar" aria-label="${escape(pilot.name)} health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.max(0,pilot.health)}"><i style="width:${Math.max(0,pilot.health)}%;background:${pilot.color}"></i></div></div>`).join('');
+  }
+  const alive=state.players.filter((pilot)=>pilot.health>0);
+  if (!alive.some((pilot)=>pilot.id===selectedTarget)) selectedTarget='';
+  const nextTargets = JSON.stringify(alive.map((pilot)=>pilot.id));
+  if (nextTargets!==targetSignature) {
+    targetSignature=nextTargets;
+    $('battle-target').innerHTML='<option value="">Choose before every cast</option>'+alive.map((pilot)=>`<option value="${escape(pilot.id)}">${escape(pilot.name)}${pilot.id===selfId ? ' (self: heal / reflect / shield)' : ''}</option>`).join('');
+    $('battle-target').value=selectedTarget;
+  }
+  for (const option of $('battle-target').options) {
+    const pilot=alive.find((entry)=>entry.id===option.value);
+    if (pilot) option.textContent=`${pilot.name} · ${pilot.health} HP${pilot.id===selfId ? ' (self)' : ''}`;
+  }
+  const disabled=spectator || !snapshotReady || health<=0 || p.stunUntil>now || p.frozenUntil>now;
+  $('battle-target').disabled=disabled;
+  $('pass-turn-button').hidden=unlimited;
+  $('pass-turn-button').disabled=disabled || !myTurn;
+  const cooldown=Math.max(0,(p.castReadyAt-now)/1000);
+  put('battle-hint',health<=0 ? 'Eliminated. Watch the last pilots battle it out.' : p.stunUntil>now ? `Stunned for ${Math.ceil((p.stunUntil-now)/1000)}s` : cooldown>0 ? `Next cast in ${cooldown.toFixed(1)}s. Pick your next target.` : selectedTarget ? '2. Choose a move for this target.' : '1. Choose a target. 2. Cast a move. Orbs refill LP.');
+  for (const button of $('battle-moves').children) {
+    const move=MOVE_CATALOG.find((entry)=>entry.id===button.dataset.cast);
+    const stats=getMoveStats(p,move.id);
+    const owned=(p.moves?.[move.id] || 0)>0;
+    const pp=p.movePP?.[move.id] || 0;
+    const correctTarget=selectedTarget && (stats.target==='self' ? selectedTarget===selfId : selectedTarget!==selfId);
+    const redundant=move.type==='heal' && health>=100 || move.type==='reflect' && p.reflectUntil>now || move.type==='shield' && p.barrierUntil>now && p.shieldHealth>0;
+    const status=!owned ? 'Buy in the shop' : redundant ? move.type==='heal' ? 'Health is full' : 'Already active' : !myTurn ? 'Wait for your turn' : !unlimited && !pp ? 'No PP until buy round' : !unlimited && (p.lightPoints || 0)<stats.lightCost ? 'Collect more LP' : !selectedTarget ? 'Choose a target' : !correctTarget ? stats.target==='self' ? 'Select yourself' : 'Select an opponent' : cooldown>0 ? 'Recharging' : 'Cast';
+    button.disabled=disabled || !myTurn || !owned || redundant || (!unlimited && (!pp || (p.lightPoints || 0)<stats.lightCost)) || !correctTarget || cooldown>0;
+    button.querySelector('span').textContent=unlimited ? `${owned ? `R${stats.level} · ` : ''}2.5s cooldown` : owned ? `R${stats.level} · ${stats.lightCost} LP · ${pp}/${stats.maxPP} PP` : `${stats.lightCost} LP · ${stats.maxPP} PP`;
+    button.querySelector('small').textContent=status;
+    button.setAttribute('aria-label',`${move.name}, ${button.querySelector('span').textContent}, ${status}`);
+  }
+}
+
 function renderUI() {
   const spectator = !me();
   const p = me() || addPlayer(createGame(), {id:selfId,name:bridge.self?.name || 'Spectator'});
   const now = gameNow();
   const playing = state.phase === 'playing', shopping = state.phase === 'shop';
+  const battle=state.gameMode==='battle';
   const wasShopping = document.documentElement.dataset.phase === 'shop';
   document.documentElement.dataset.phase = state.phase;
+  document.documentElement.dataset.gameMode = state.gameMode || 'orbit';
+  if (shopping && !wasShopping) shopTab=battle ? 'moves' : 'orbit';
+  if (!battle) shopTab='orbit';
+  $('mode-picker').hidden=state.phase!=='lobby';
+  $('combat-style-picker').hidden=state.phase!=='lobby' || !battle;
+  document.querySelectorAll('[data-mode]').forEach((button)=>{button.classList.toggle('active',button.dataset.mode===(state.gameMode || 'orbit'));button.setAttribute('aria-pressed',String(button.dataset.mode===(state.gameMode || 'orbit')));button.disabled=!bridge.isHost || !snapshotReady;});
+  document.querySelectorAll('[data-combat-style]').forEach((button)=>{button.classList.toggle('active',button.dataset.combatStyle===(state.combatStyle || 'turn-based'));button.setAttribute('aria-pressed',String(button.dataset.combatStyle===(state.combatStyle || 'turn-based')));button.disabled=!bridge.isHost || !snapshotReady;});
+  $('lobby-button').hidden=state.phase==='lobby';
+  $('lobby-button').disabled=!snapshotReady || !bridge.isHost;
+  $('lobby-button').title=bridge.isHost ? 'Return everyone to the lobby. Keep builds and scores.' : 'The host can return the group to the lobby.';
   document.documentElement.classList.toggle('reduced-effects', arena.reducedMotion);
   $('shop').hidden = !shopping;
   if (wasShopping && !shopping && $('shop').contains(document.activeElement)) $('arena').focus({preventScroll:true});
@@ -299,11 +412,11 @@ function renderUI() {
     else avatar.textContent = p.name.charAt(0).toUpperCase();
     avatarSignature = nextAvatarSignature;
   }
-  const nextBuildSignature = JSON.stringify(p.upgrades);
+  const nextBuildSignature = JSON.stringify([p.upgrades,p.moves,p.orbUpgrades]);
   if (nextBuildSignature !== buildSignature) {
     buildSignature = nextBuildSignature;
-    $('run-build').innerHTML = Object.entries(p.upgrades).map(([id,level]) => `<span class="build-chip" title="${escape(catalog.get(id)?.description)}">${escape(catalog.get(id)?.name || id)} <b>×${level}</b></span>`).join('') || '<p class="empty-build">A blank canvas. A dangerous amount of potential.</p>';
-    put('build-count', String(Object.values(p.upgrades).reduce((a,b)=>a+b,0)).padStart(2,'0'));
+    $('run-build').innerHTML = [...Object.entries(p.upgrades).map(([id,level]) => `<span class="build-chip" title="${escape(catalog.get(id)?.description)}">${escape(catalog.get(id)?.name || id)} <b>×${level}</b></span>`), ...[...MOVE_CATALOG,...ORB_UPGRADE_CATALOG].filter((item)=>(p.moves?.[item.id] || p.orbUpgrades?.[item.id] || 0)>0).map((item)=>`<span class="build-chip">${escape(item.name)} <b>R${p.moves?.[item.id] || p.orbUpgrades?.[item.id]}</b></span>`)].join('') || '<p class="empty-build">A blank canvas. A dangerous amount of potential.</p>';
+    put('build-count', String([...Object.values(p.upgrades),...Object.values(p.moves || {}),...Object.values(p.orbUpgrades || {})].reduce((a,b)=>a+b,0)).padStart(2,'0'));
   }
   const sorted = [...state.players].sort((a,b) => b.score - a.score);
   const nextLeaderboardSignature = sorted.map((p) => `${p.id}:${p.name}:${p.avatarUrl}:${p.score}:${p.level}`).join('|');
@@ -326,13 +439,19 @@ function renderUI() {
   } else if (shopping) message = `${icon('gem')} Bank the shards. Break the next round.`;
   if ($('arena-message').innerHTML !== message) $('arena-message').innerHTML = message;
   $('arena-message').classList.toggle('surge-live',playing && state.surge.active);
-  document.querySelectorAll('[data-lane]').forEach((b) => { const selected = !spectator && Number(b.dataset.lane) === p.lane; b.classList.toggle('active',selected); b.setAttribute('aria-pressed',String(selected)); b.disabled = shopping || !snapshotReady || spectator; });
+  document.querySelectorAll('[data-lane]').forEach((b) => { const selected = !spectator && Number(b.dataset.lane) === p.lane; b.classList.toggle('active',selected); b.setAttribute('aria-pressed',String(selected)); b.disabled = shopping || !snapshotReady || spectator || (battle && playing && (p.health<=0 || p.stunUntil>now)); });
   const cooldown = Math.max(0,Math.ceil((p.boostReadyAt-now)/1000));
-  $('boost-button').disabled = !playing || cooldown > 0 || !snapshotReady || spectator;
+  $('boost-button').disabled = !playing || cooldown > 0 || !snapshotReady || spectator || (battle && (p.health<=0 || p.stunUntil>now));
   put('boost-label',burst ? `Bursting · ${Math.ceil((p.boostUntil-now)/1000)}s` : cooldown ? `Recharge · ${cooldown}s` : 'Orbit burst');
   if (shopping) {
     put('play-title',`Heat ${state.round} complete. Make it unfair.`); put('play-description',`${state.players.filter((p)=>!p.bot && p.ready).length}/${humans} pilots ready. Choose upgrades, then spin again.`); put('play-label',p.ready ? 'Ready ✓' : 'Ready for next heat');
     $('play-button').disabled = p.ready || !snapshotReady;
+    if (battle) {
+      const winner=state.players.find((pilot)=>pilot.id===state.battleWinnerId);
+      put('play-title',state.battlePreparation ? 'Buy your opening move.' : winner ? `${winner.name} wins. Winner winner chicken dinner!` : `Heat ${state.round} complete. Rebuild for the next battle.`);
+      put('play-description',`${state.players.filter((pilot)=>!pilot.bot && pilot.ready).length}/${humans} ready · ${state.combatStyle==='no-limits' ? 'Cooldowns only.' : 'PP refills each heat.'} Move ranks unlock each round.`);
+      if (state.battlePreparation) put('play-label',p.ready ? 'Ready ✓' : 'Ready for battle');
+    }
   } else if (playing) {
     const rank = sorted.findIndex((v)=>v.id === selfId)+1;
     put('play-title',`${rank === 1 ? 'You are setting the pace.' : `You're #${rank}. The light is on your side.`}`); put('play-description','Shift rings to absorb orbs. Stack beams. Unleash the chaos.'); put('play-label','Heat in progress'); $('play-button').disabled = true;
@@ -340,21 +459,35 @@ function renderUI() {
     put('play-title',snapshotReady ? 'Your next obsession starts here.' : 'Finding your place in the orbit…');
     put('play-description',mode === 'refract' ? 'Everyone in this activity shares the same orbit and score table.' : '60-second heats. Wild upgrades. Just one more spin.');
     put('play-label',!snapshotReady ? 'Syncing…' : bridge.isHost ? 'Enter the orbit' : 'Waiting for host'); $('play-button').disabled = !bridge.isHost || !snapshotReady;
+    if (battle) {put('play-title','Last pilot orbiting wins.');put('play-description',state.combatStyle==='no-limits' ? 'Buy moves. Cast with cooldowns. Rays and collisions still score.' : 'Take turns to cast. Catch LP orbs. Outlast every rival.');if(snapshotReady && bridge.isHost)put('play-label','Open battle shop');}
   }
+  if (battle && playing) {put('play-title',p.health<=0 ? 'Eliminated. The battle continues.' : `${state.players.filter((pilot)=>pilot.health>0).length} pilots left in the orbit.`);put('play-description','Rays and collisions earn points and shards. Last pilot standing wins.');}
   $('free-tokens').hidden = !shopping || !p.upgradeTokens;
   put('free-tokens',`${p.upgradeTokens} FREE CHOICE${p.upgradeTokens === 1 ? '' : 'S'}`);
   $('reroll-button').disabled = p.credits < p.rerollCost || !snapshotReady || spectator;
   put('reroll-label',`Reroll / ${p.rerollCost}`);
   put('shop-subtitle',p.upgradeTokens ? 'Your level-up choices are free. Spend shards for more.' : 'Spend your shards. Make the next heat yours.');
+  $('shop-tabs').hidden=!battle || !shopping;
+  $('results-button').disabled=battle && state.battlePreparation;
+  document.querySelector('[data-shop-tab="orbs"]').hidden=state.combatStyle==='no-limits';
+  $('reroll-button').hidden=battle && shopTab!=='orbit';
+  document.querySelectorAll('[data-shop-tab]').forEach((button)=>{button.setAttribute('aria-pressed',String(button.dataset.shopTab===shopTab));button.classList.toggle('active',button.dataset.shopTab===shopTab);});
+  $('upgrade-grid').dataset.tab=shopTab;
+  const winner=battle && state.players.find((pilot)=>pilot.id===state.battleWinnerId);
+  put('shop-title',battle ? state.battlePreparation ? 'Choose your opening moves.' : winner ? 'Winner winner chicken dinner!' : 'Build your next battle.' : 'Build something ridiculous.');
+  put('shop-tag',battle && state.battlePreparation ? 'OPENING BUY ROUND' : 'BUY ROUND');
+  if (battle) put('shop-subtitle',shopTab==='moves' ? state.combatStyle==='no-limits' ? 'Every move uses a 2.5-second cooldown. Buy ranks for stronger effects.' : 'Orbs fuel LP. Each move has PP per heat. Higher ranks improve power and PP.' : shopTab==='orbs' ? 'Turn based: +2 / +4 / +6 LP orbs. Upgrade capacity and collection yield.' : 'Ray, collision and economy upgrades still power your build.');
+  put('shop-note',battle && state.battlePreparation ? 'ALL MOVES ARE BOUGHT · KEEP YOUR BUILD' : '+35 END-OF-HEAT SHARDS');
   const offers = shopping && !spectator ? p.shopOffers : [];
-  const nextShopSignature = JSON.stringify([state.phase,offers,p.upgrades,p.upgradeTokens,p.credits,snapshotReady]);
+  const nextShopSignature = JSON.stringify([state.phase,state.round,shopTab,offers,p.upgrades,p.moves,p.orbUpgrades,p.upgradeTokens,p.credits,snapshotReady]);
   if (nextShopSignature !== shopSignature) {
     shopSignature = nextShopSignature;
-    $('upgrade-grid').innerHTML = shopping ? offers.map((id) => catalog.get(id)).filter(Boolean).map((u)=>upgradeCard(u,p)).join('') || `<p class="empty-build">${spectator ? 'The pilots are choosing their upgrades.' : 'Every upgrade is maxed. This orbit belongs to you.'}</p>` : '';
+    $('upgrade-grid').innerHTML = shopping ? spectator ? '<p class="empty-build">The pilots are choosing their upgrades.</p>' : shopTab==='moves' ? MOVE_CATALOG.map((move)=>moveShopCard(move,p)).join('') : shopTab==='orbs' ? ORB_UPGRADE_CATALOG.map((item)=>orbShopCard(item,p)).join('') : offers.map((id) => catalog.get(id)).filter(Boolean).map((u)=>upgradeCard(u,p)).join('') || '<p class="empty-build">Every upgrade is maxed. This orbit belongs to you.</p>' : '';
   }
   put('mic-title',state.surge.active ? 'Your voice. Your points.' : 'Make some noise.');
   if (mic.enabled) put('mic-description',state.surge.active ? 'Solar Surge is live. Speaking earns up to 100 extra points per second.' : 'Mic ready. Your next Solar Surge is coming. Voice only scores during the window.');
   if (spectator) { put('play-title','The orbit is full. Enjoy the show.'); put('play-description','Eight pilots are spinning. A place opens when a pilot leaves.'); put('play-label','Spectating'); $('play-button').disabled = true; }
+  renderBattle(p, now, spectator);
 }
 
 function openModal(kind, title, content, eyebrow = 'ORBITAL FIELD GUIDE') {
@@ -364,6 +497,7 @@ function openModal(kind, title, content, eyebrow = 'ORBITAL FIELD GUIDE') {
 }
 function closeModal() { $('modal').close(); modalKind = ''; }
 function openHelp() {
+  if (state.gameMode==='battle') { openBattle(); return; }
   openModal('help','A field guide to absolute chaos.',`<p>Keep orbiting, catch light rays, and collide with rivals for points. Temporary orbs live on the five rings: move your avatar into one to absorb it and collect its points bonus.</p><div class="help-steps"><div class="help-step">${icon('orbit')}<strong>Pick your ring</strong><p>A / D or the arrow keys move inward and outward. Keys 1-5 select a ring directly. On touchscreens, use the numbered ring buttons.</p></div><div class="help-step">${icon('zap')}<strong>Time your burst</strong><p>Space gives +65% speed and double scoring for four seconds. Chase an orb, set up a collision, or escape a rival.</p></div><div class="help-step">${icon('sun')}<strong>Stack the field</strong><p>Beam orbs add more rays from the core, up to 50 at once. Haste orbs make those rays spin faster. Each stack expires independently.</p></div><div class="help-step">${icon('gem')}<strong>Build between heats</strong><p>Every level banks a free upgrade. After a 60-second heat, the buy round opens right here for 30 seconds. Ready up to launch early.</p></div></div><h3 class="orb-guide-title">Know your orbs</h3><div class="orb-guide">${ORB_CATALOG.map((orb)=>`<div><span style="--orb-color:${orb.color}"></span><p><strong>${escape(orb.name)}</strong> ${escape(orb.description)} <small>+${orb.points} points</small></p></div>`).join('')}</div><p class="help-note">Temporary powers clear between heats. Levels, permanent upgrades, and total scores carry on.<br>Optional microphone bonuses: open Run details to enable Solar Surges.<br>F = FULLSCREEN / ESC = CLOSE DIALOG</p>`);
 }
 function openLibrary() {
@@ -391,7 +525,8 @@ function openSettings() {
   if ($('pilot-name-input')) $('pilot-name-input').onchange = (e) => { profile.name = e.target.value.trim().slice(0,24) || 'You'; saveProfile(); const p = me(); if (p) p.name = profile.name; renderUI(); };
 }
 function openBattle() {
-  openModal('battle','The next revolution.',`<div class="battle-preview">${icon('swords')}<h3>Rivals today. Targets tomorrow.</h3><p>A future battle mode will bring turn-based attacks, orbit-triggered abilities, and head-to-head encounters to your revolutions. For now, settle it on the leaderboard.</p><div class="battle-tags"><span>ORBIT-TRIGGERED MOVES</span><span>ELEMENTAL BUILDS</span><span>TURN-BASED DUELS</span></div></div>`,'PVP · COMING IN A FUTURE UPDATE');
+  const reference=addPlayer(createGame(),{id:'guide'});
+  openModal('battle','Catch light. Choose your rival.',`<p class="battle-rules">Choose <strong>Battle</strong> in the lobby. Every pilot starts with 100 HP and 60 shards. Buy your first move before launching. Rays, revolutions, collisions and orbs still earn points, XP and shards. At 0 HP a pilot stops orbiting and is out for the heat. The last survivor gets <strong>Winner winner chicken dinner!</strong> If time runs out with several survivors, the heat ends without a last-survivor winner.</p><div class="move-reference"><div><strong>Turn based</strong><p>Everyone keeps orbiting. The active pilot has 10 seconds to choose a target and cast, or pass. Collect Light motes (+2 LP), clusters (+4 LP) and Nova orbs (+6 LP). Every cast spends LP and one move PP. Stun also skips the target's next turn. PP refills for each heat.</p></div><div><strong>No limits</strong><p>Cast whenever your 2.5-second cooldown is ready. Moves cost no LP or PP in this style. Light orbs still score points. Choose a fresh target before each cast; select yourself for heal, reflect and shield.</p></div></div><div class="move-reference">${MOVE_CATALOG.map((move)=>{const stats=getMoveStats(reference,move.id);return `<div style="--move-color:${move.color}"><strong>${escape(move.name)}</strong><p>${escape(move.description)}</p><small>Rank 1: ${move.cost} shards · ${stats.lightCost} LP · ${stats.maxPP} PP per heat</small></div>`;}).join('')}</div><p class="battle-rules"><strong>Buy-round progression:</strong> moves have five ranks. Rank 1 opens before heat 1, rank 2 after heat 1, and so on. Each rank costs 25 more shards, adds PP and improves its effect; some higher ranks need more LP. Level-up free choices can buy move or orb ranks too. Light reservoir adds 5 LP capacity per rank; Orb condenser adds 1 LP to every Light orb per rank, each up to rank 3. Both use the same heat gates. Health and PP reset each heat; LP, move ranks and your build carry forward.</p>`,'BATTLE FIELD GUIDE');
 }
 function openResults() {
   const p = me(); if (!p) return;
@@ -416,6 +551,14 @@ async function toggleMic() {
 }
 
 $('play-button').onclick = () => send({type:state.phase === 'shop' ? 'ready' : 'start'});
+$('lobby-button').onclick=()=>{send({type:'lobby'});if($('modal').open)closeModal();if($('run-details').open)$('run-details').close();};
+$('battle-guide-button').onclick=openBattle;
+$('battle-target').onchange=(event)=>{selectedTarget=event.target.value;renderUI();};
+$('battle-moves').onclick=(event)=>{const button=event.target.closest('[data-cast]');if(button && !button.disabled && selectedTarget){const targetId=selectedTarget;selectedTarget='';$('battle-target').value='';send({type:'cast',moveId:button.dataset.cast,targetId,round:state.round});renderUI();}};
+$('pass-turn-button').onclick=()=>{selectedTarget='';$('battle-target').value='';send({type:'pass-turn',round:state.round});};
+document.querySelectorAll('[data-mode]').forEach((button)=>button.onclick=()=>send({type:'mode',mode:button.dataset.mode}));
+document.querySelectorAll('[data-combat-style]').forEach((button)=>button.onclick=()=>send({type:'combat-style',style:button.dataset.combatStyle}));
+document.querySelectorAll('[data-shop-tab]').forEach((button)=>button.onclick=()=>{shopTab=button.dataset.shopTab;renderUI();});
 $('boost-button').onclick = () => send({type:'boost'});
 $('sound-button').onclick = () => toggleSound();
 $('fullscreen-button').onclick = () => bridge.setFullscreen();
@@ -432,7 +575,7 @@ $('modal').addEventListener('close',()=>{modalKind='';});
 $('modal').addEventListener('click',(e)=>{ if(e.target === $('modal')) {const r=$('modal').getBoundingClientRect(); if(e.clientX<r.left || e.clientX>r.right || e.clientY<r.top || e.clientY>r.bottom) closeModal();} });
 document.querySelectorAll('[data-nav]').forEach((b)=>b.onclick=()=>{ if(b.dataset.nav==='library')openLibrary();else if(b.dataset.nav==='battle')openBattle();else $('arena').focus(); });
 document.querySelectorAll('[data-lane]').forEach((b)=>b.onclick=()=>send({type:'lane',lane:Number(b.dataset.lane)}));
-$('upgrade-grid').addEventListener('click',(e)=>{ const b=e.target.closest('[data-buy]'); if(b && !b.disabled)send({type:'buy',upgradeId:b.dataset.buy}); });
+$('upgrade-grid').addEventListener('click',(event)=>{const button=event.target.closest('[data-buy],[data-buy-move],[data-buy-orb]');if(!button || button.disabled)return;if(button.dataset.buyMove)send({type:'buy-move',moveId:button.dataset.buyMove,round:state.round});else if(button.dataset.buyOrb)send({type:'buy-orb',upgradeId:button.dataset.buyOrb,round:state.round});else send({type:'buy',upgradeId:button.dataset.buy,round:state.round});});
 document.addEventListener('pointerdown',()=>audio.unlock(),{once:true});
 document.addEventListener('keydown',(e)=>{
   if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || ['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName) || e.target.isContentEditable || $('modal').open || $('run-details').open || !me()) return;

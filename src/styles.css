@@ -58,3 +58,118 @@ h1{font-size:17px}.intro{padding:0}.timer{font-size:21px}.run-hud{padding:8px;ga
 @media(max-width:360px){.brand-name{font-size:12px}.details-button span{font-size:8px}.top-actions{gap:4px}.icon-button{width:27px}.lane-caption{display:none}.lane-group button{width:24px}.boost-button{min-width:103px}h1{font-size:16px}.run-hud{gap:7px;grid-template-columns:58px 65px minmax(80px,1fr) 25px}.shop-locked-note{display:none}.shop-bottom{justify-content:flex-end}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 html.reduced-effects *,html.reduced-effects *:before,html.reduced-effects *:after{animation:none!important;transition:none!important}
+
+/* Battle controls stay alongside the orbit, with purchases inside the buy round. */
+select:focus-visible{outline:2px solid var(--green);outline-offset:3px}
+#lobby-button{white-space:nowrap;padding:8px 10px;color:#cfbddf}
+#lobby-button svg{transform:rotate(180deg)}
+.mode-picker{display:inline-flex;align-items:center;gap:3px;padding:3px;margin-top:7px;border:1px solid #b9a0e622;border-radius:7px;background:#0f0d1666}
+.mode-picker button,.shop-tabs button{display:flex;align-items:center;justify-content:center;gap:5px;border-radius:4px;background:transparent;padding:6px 10px;font:500 10px var(--display);color:#9f90ad;white-space:nowrap}
+.mode-picker button.active,.mode-picker button[aria-pressed=true],.shop-tabs button.active,.shop-tabs button[aria-selected=true],.shop-tabs button[aria-pressed=true]{background:#b9a0e61d;color:#e0cef5;box-shadow:inset 0 0 0 1px #b9a0e62b}
+.mode-picker button svg{width:12px;height:12px}
+.mode-picker button:hover:not(:disabled),.shop-tabs button:hover{color:var(--green);background:#bcf6cf0a}
+.combat-style-picker{display:inline-flex;gap:3px;padding:3px;margin:7px 0 0 7px;vertical-align:top;border:1px solid #e8ca8626;border-radius:7px;background:#16130d66}
+.combat-style-picker button{font:500 9px var(--display);padding:6px 9px;border-radius:4px;background:none;color:#a99a7f;white-space:nowrap}
+.combat-style-picker button[aria-pressed=true],.combat-style-picker button.active{background:#e8ca8619;color:#eddbab;box-shadow:inset 0 0 0 1px #e8ca8629}
+.combat-style-picker button:hover:not(:disabled){color:#f8eac4;background:#e8ca8612}
+#turn-status{font:8px/1.4 ui-monospace,monospace;color:#e8ca86;max-width:130px;min-width:65px}
+#pass-turn-button{font-size:9px;white-space:nowrap;padding:6px 8px;flex-shrink:0}
+html[data-game-mode=battle][data-phase=playing] .arena-panel{grid-template-rows:40px minmax(0,1fr) 54px 122px 29px}
+.battle-console{display:grid;grid-template-columns:minmax(180px,1fr) minmax(260px,1.5fr);grid-template-rows:30px 44px 14px;gap:6px 18px;padding:10px 18px;border-top:1px solid #b9a0e620;background:linear-gradient(110deg,#b9a0e60b,transparent),#14121b;min-width:0}
+.battle-status-row{display:flex;align-items:center;gap:24px;min-width:0}
+.health-meter{display:grid;grid-template-columns:1fr auto;gap:4px 12px;min-width:115px;max-width:200px;flex:1;font:8px ui-monospace,monospace;color:#a79ab2}
+.health-meter strong{font-weight:400;color:var(--green);font-variant-numeric:tabular-nums}
+.health-meter>span{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.health-track{grid-column:1/-1;height:4px;border-radius:3px;background:#ffffff0a;overflow:hidden}
+.health-track i{display:block;height:100%;width:100%;border-radius:3px;background:var(--green);transition:width .18s}
+.health-track i.low{background:#ffa5a1}
+.light-meter{display:flex;align-items:center;gap:9px;white-space:nowrap}
+.light-meter small{font:8px ui-monospace,monospace;color:#b6a2cc}
+.light-meter strong{font:500 19px var(--display);color:var(--gold);font-variant-numeric:tabular-nums}
+.battle-action-row{display:flex;align-items:center;gap:12px;min-width:0}
+.target-picker{display:flex;align-items:center;gap:9px;min-width:0;flex:1}
+.target-picker>span{font:8px ui-monospace,monospace;color:#c1b0d1;white-space:nowrap}
+.target-picker select{width:100%;min-width:0;max-width:270px;background:#211b2b;border:1px solid #b9a0e63d;color:#e2d6ef;border-radius:5px;padding:7px 9px;font:10px var(--display)}
+#battle-hint{font:8px/1.45 ui-monospace,monospace;color:#94829f;max-width:180px}
+.battle-moves{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;grid-column:1/-1;min-width:0}
+.move-button{display:grid;grid-template-columns:1fr auto;align-content:center;gap:3px 8px;min-width:0;text-align:left;padding:6px 10px;border:1px solid color-mix(in srgb,var(--move-color,#b9a0e6) 35%,transparent);border-radius:6px;background:color-mix(in srgb,var(--move-color,#b9a0e6) 6%,#17141f);color:#d9cbe6}
+.move-button strong{font:500 11px var(--display);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--move-color,#d7baf6)}
+.move-button span{font:8px ui-monospace,monospace;color:#b6a7c4;white-space:nowrap}
+.move-button small{font:8px ui-monospace,monospace;color:#a695b7;grid-column:1/-1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.move-button:hover:not(:disabled){border-color:var(--move-color,#b9a0e6);background:color-mix(in srgb,var(--move-color,#b9a0e6) 14%,#17141f)}
+.move-button:disabled{opacity:.52}
+.battle-feedback{grid-column:1/-1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#b4a1c5;font:8px/14px ui-monospace,monospace;min-width:0}
+.shop-tabs{display:flex;gap:4px;align-items:center;flex-shrink:0;padding:3px;border:1px solid #b9a0e61c;background:#100e1666;border-radius:7px;align-self:flex-start}
+.shop-tabs button{font-size:10px;padding:7px 11px}
+.upgrade-grid[data-tab=moves]{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.upgrade-grid[data-tab=orbs]{grid-template-columns:repeat(2,minmax(0,1fr))}
+.upgrade-grid[data-tab=moves] .move-shop-card{min-height:80px;padding:8px 10px;display:grid;grid-template-columns:27px minmax(0,1fr) auto;grid-template-rows:auto auto auto;gap:2px 8px;align-items:center}
+.move-shop-card .upgrade-card-top{grid-column:1;grid-row:1/4;margin:0;display:block}
+.move-shop-card .rarity{display:none}
+.move-shop-card h3{grid-column:2;grid-row:1;margin:0;font-size:12px}
+.move-shop-card p{grid-column:2;grid-row:2;font-size:9px;line-height:1.45;margin:0;max-width:none}
+.move-detail{grid-column:2;grid-row:3;font:8px/1.5 ui-monospace,monospace;color:#bea9d3;display:block}
+.move-shop-card .upgrade-card-footer{grid-column:3;grid-row:1/4;padding:0;border:0;margin:0;display:flex;align-items:flex-end;flex-direction:column;gap:7px}
+.move-shop-card .upgrade-card-footer>span{font-size:7px;text-align:right;max-width:90px}
+html[data-game-mode=battle][data-phase=shop] .upgrade-section{max-height:calc(100% - 16px);overflow:auto;overscroll-behavior:contain;gap:7px;padding:10px 16px}
+html[data-game-mode=battle][data-phase=shop] .upgrade-heading h2{font-size:20px}
+.battle-rules{font-size:11px;line-height:1.75;color:#b5a3c7}
+.move-reference{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0}
+.move-reference>div,.move-reference>article{padding:13px;border:1px solid #b9a0e622;border-radius:8px;background:#b9a0e606;min-width:0}
+.move-reference strong{display:block;font:500 12px var(--display);color:var(--move-color,var(--green));margin-bottom:6px}
+.move-reference p,.move-reference small{font-size:10px;line-height:1.65;color:#a393b2}
+.move-reference small{display:block;color:#baa4ce;margin-top:5px}
+.battle-roster{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:min(660px,calc(100% - 24px));display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;z-index:2;pointer-events:none}
+.battle-pilot{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;align-items:center;padding:5px 8px;border:1px solid #b9a0e626;border-radius:5px;background:#17131de8;min-width:0}
+.battle-pilot-name{font:9px var(--display);color:#d3c5e0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.battle-pilot strong{font:8px ui-monospace,monospace;color:var(--green);white-space:nowrap}
+.battle-pilot-track{height:3px;grid-column:1/-1;background:#ffffff0b;border-radius:2px;overflow:hidden}
+.battle-pilot-track i{display:block;width:100%;height:100%;background:var(--green);border-radius:2px;transition:width .15s}
+.battle-pilot.eliminated{opacity:.55}.battle-pilot.eliminated strong{color:#ffa5a1}.battle-pilot.eliminated .battle-pilot-name{text-decoration:line-through}
+html[data-game-mode=battle][data-phase=playing] .arena-coordinate{visibility:hidden}
+@media(max-width:1000px){
+  html[data-game-mode=battle] .connection-pill{display:none}
+  .battle-console{grid-template-columns:minmax(160px,1fr) minmax(250px,1.4fr);gap:6px 12px}
+  .battle-status-row{gap:12px}.light-meter{gap:7px}.light-meter small{font-size:7px}
+  #battle-hint{display:none}.move-button{padding:6px 8px;gap:3px 5px}.move-button strong{font-size:10px}
+}
+@media(max-width:680px){
+  #lobby-button{width:29px;height:29px;padding:0;justify-content:center;flex-shrink:0}
+  #lobby-button span{display:none}#lobby-button svg{width:14px;height:14px}
+  html[data-game-mode=battle][data-phase=playing] .arena-panel{grid-template-rows:36px minmax(0,1fr) 52px 151px}
+  .mode-picker{margin-top:5px;gap:2px;padding:2px}.mode-picker button{font-size:8px;padding:5px 7px;gap:4px}.mode-picker button svg{width:10px;height:10px}
+  .combat-style-picker{display:flex;flex-direction:column;width:fit-content;max-width:100%;margin:5px 0 0;padding:2px;gap:2px}.combat-style-picker button{font-size:8px;padding:5px 7px}
+  .battle-console{display:flex;flex-direction:column;gap:5px;padding:8px 10px;min-height:0}
+  .battle-status-row{height:20px;flex-shrink:0;gap:16px}.health-meter{font-size:7px;min-width:100px;max-width:none;gap:3px 8px}.light-meter{gap:8px}.light-meter small{font-size:7px}.light-meter strong{font-size:17px}
+  .battle-status-row{height:28px;gap:9px}.health-meter{min-width:85px}.light-meter{flex-direction:column;gap:1px}.light-meter small{font-size:6px}.light-meter strong{font-size:14px}#turn-status{font-size:7px;min-width:62px;max-width:78px}#pass-turn-button{font-size:8px;padding:6px}
+  .battle-action-row{height:30px;flex-shrink:0}.target-picker{gap:8px}.target-picker>span{font-size:8px}.target-picker select{max-width:none;font-size:10px;padding:6px 8px}
+  .battle-moves{height:43px;flex-shrink:0;gap:4px}.move-button{padding:5px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px}.move-button strong{font-size:8px;max-width:100%;letter-spacing:-.1px}.move-button span,.move-button small{font-size:7px;max-width:100%;line-height:1}.move-button small{display:none}
+  .battle-feedback{font-size:7px;line-height:14px;flex-shrink:0}
+  .shop-tabs{gap:2px;padding:2px;width:100%;justify-content:space-between}.shop-tabs button{flex:1;font-size:8px;padding:6px 7px}
+  html[data-game-mode=battle][data-phase=shop] .upgrade-section{padding:10px;gap:6px}
+  html[data-game-mode=battle][data-phase=shop] .upgrade-heading h2{font-size:16px}
+  .upgrade-grid[data-tab=moves],.upgrade-grid[data-tab=orbs]{grid-template-columns:1fr;gap:6px}
+  .upgrade-grid[data-tab=moves] .move-shop-card{min-height:63px;padding:7px 8px;grid-template-columns:23px minmax(0,1fr) auto;grid-template-rows:auto auto auto;gap:2px 7px}
+  .move-shop-card .upgrade-icon{height:23px;width:23px}.move-shop-card .upgrade-icon svg{width:13px;height:13px}.move-shop-card h3{font-size:10px;align-self:auto}.move-shop-card p{font-size:8px;line-height:1.3;max-height:2.6em;align-self:auto}.move-detail{font-size:7px;line-height:1.3;white-space:normal}.move-shop-card .upgrade-card-footer{gap:4px}.move-shop-card .upgrade-card-footer>span{display:block;font-size:6px;max-width:65px}.move-shop-card .buy-button{font-size:8px;padding:7px 6px}
+  .move-reference{grid-template-columns:1fr}
+  .move-button span{font-size:6px;white-space:normal;line-height:1.3}
+  .move-shop-card p{max-height:none;overflow:visible}.move-shop-card .move-detail{font-size:6.5px;line-height:1.3;margin-top:2px}
+  .battle-roster{top:8px;width:calc(100% - 16px);grid-template-columns:repeat(2,minmax(0,1fr));gap:3px}.battle-pilot{padding:4px 6px;gap:2px 6px}.battle-pilot-name{font-size:8px}.battle-pilot strong{font-size:7px}.battle-pilot-track{height:2px}
+}
+@media(max-height:720px){
+  html[data-game-mode=battle][data-phase=playing] .arena-panel{grid-template-rows:35px minmax(0,1fr) 49px 112px}
+  .battle-console{padding-top:7px;padding-bottom:7px;grid-template-rows:26px 42px 12px;gap:5px 14px}
+  html[data-game-mode=battle][data-phase=shop] .upgrade-section{padding:10px 12px;gap:7px}
+  html[data-game-mode=battle][data-phase=shop] .upgrade-heading h2{font-size:17px}
+  .upgrade-grid[data-tab=moves] .move-shop-card{min-height:84px;padding:8px}
+}
+@media(max-width:680px) and (max-height:720px){
+  html[data-game-mode=battle][data-phase=playing] .arena-panel{grid-template-rows:35px minmax(0,1fr) 48px 143px}
+  .battle-console{padding:6px 8px;gap:4px}.battle-status-row{height:19px}.battle-action-row{height:29px}.battle-moves{height:42px}
+  .battle-status-row{height:27px}
+  html[data-game-mode=battle][data-phase=shop] .upgrade-section{padding:8px;gap:6px}
+  html[data-game-mode=battle][data-phase=shop] .upgrade-heading h2{font-size:14px}
+  .upgrade-grid[data-tab=moves] .move-shop-card{min-height:61px;padding:6px;gap:2px 6px}
+  .move-shop-card p{font-size:7px}.move-detail{font-size:6px}.move-shop-card .upgrade-card-footer>span{max-width:56px}
+  .shop-tabs button{padding:5px 6px;font-size:7px}
+}
