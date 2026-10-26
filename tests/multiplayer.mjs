@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { unpackGameState } from '../src/game.js';
 
 async function playwright() {
   const candidates = [process.env.PLAYWRIGHT_PATH].filter(Boolean);
@@ -83,7 +84,11 @@ addEventListener('message',event=>{
 
 const log = (message) => console.log(`PASS ${message}`);
 const frame = (id) => page.frame({ name: `pilot-${id}` });
-const snapshot = () => page.evaluate(() => structuredClone(window.__qa.latest));
+const snapshot = async () => {
+  const result = await page.evaluate(() => structuredClone(window.__qa.latest));
+  if (result) result.state = unpackGameState(result.state);
+  return result;
+};
 const waitPhase = (phase) => page.waitForFunction((expected) => window.__qa.latest?.state.phase === expected, phase);
 async function connected(id, name) {
   await page.waitForFunction((pilot) => {
@@ -130,7 +135,7 @@ try {
 
   await page.evaluate(() => window.__qa.reload(202));
   await connected(202, 'Photon');
-  await page.waitForFunction(() => document.getElementById('pilot-202').contentDocument.querySelector('[data-lane="2"]').getAttribute('aria-pressed') === 'true');
+  await page.waitForFunction(() => document.getElementById('pilot-202')?.contentDocument?.querySelector('[data-lane="2"]')?.getAttribute('aria-pressed') === 'true');
   assert.equal((await snapshot()).state.round, 1);
   log('a reloaded peer requests and restores the current running heat');
 
@@ -165,8 +170,8 @@ try {
   await buy.waitFor();
   const upgradeId = await buy.getAttribute('data-buy');
   await buy.click({ force: true });
-  await page.waitForFunction((upgrade) => window.__qa.latest.state.players.find(pilot => pilot.id === '303').upgrades[upgrade] === 1, upgradeId);
   await page.waitForFunction(() => document.getElementById('pilot-303').contentDocument.getElementById('build-count').textContent === '01');
+  assert.equal((await snapshot()).state.players.find((pilot) => pilot.id === '303').upgrades[upgradeId], 1);
   log('the round ends in a shared shop and a peer purchases its own upgrade');
 
   await frame(202).locator('#play-button').click({ force: true });

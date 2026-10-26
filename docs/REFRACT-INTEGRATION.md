@@ -61,16 +61,21 @@ A local multi-frame relay harness can verify membership, late joins, score synch
 
 ## Optional microphone loudness bonus
 
-The game's opt-in local microphone analyzer can run when the game is opened directly on HTTPS or localhost and the browser grants microphone access. The current Refract app **does not permit microphone capture inside an activity**. User consent inside the game cannot override the parent application's restrictions. This is separate from sound-effect playback, which is permitted.
+The game's opt-in local microphone analyzer supports direct HTTPS/localhost play and is compatible with the updated local Refract source inspected on 26 October 2026. That source now delegates microphone access to hosted activities at all three layers. This establishes source compatibility; the running instance and desktop build must also contain those changes.
 
-The inspected local Refract checkout has three independent restrictions:
+| Refract source | Current behavior |
+| --- | --- |
+| `frontend/src/lib/activities.ts:43`, applied by `frontend/src/components/activities/ActivityFrame.tsx:213` | `ACTIVITY_PERMISSIONS` includes `microphone 'src'`, delegating capture to the activity frame's source origin. External activity frames retain `allow-same-origin`. |
+| `backend/src/middleware/security.ts:43` and `backend/src/lib/permissionsPolicy.ts:9` | The response policy permits microphone capture for `self` and registered HTTPS activity origins, plus loopback HTTP development origins. It normalizes and deduplicates origins; camera and display capture remain restricted to `self`. For this GitHub Pages project, the microphone origin is `https://celzor.github.io`, without the repository path. |
+| `electron/main.ts:640–688` and `electron/activityMicrophone.ts:41` | A focused, direct activity frame can request audio-only capture after a native origin-specific consent prompt. Grants are tied to the live frame and page URL for the app session; frame, origin and navigation checks remain in place. |
 
-| Refract source | Current restriction | Required change for direct activity capture |
-| --- | --- | --- |
-| `frontend/src/lib/activities.ts:41`, applied by `frontend/src/components/activities/ActivityFrame.tsx:213` | `ACTIVITY_PERMISSIONS` delegates only `autoplay; clipboard-write`. | Delegate `microphone` only for this explicitly trusted activity after an opt-in decision. Prefer per-activity capability configuration rather than adding it to every activity's shared constant. |
-| `backend/src/middleware/security.ts:28` | Production `Permissions-Policy` contains `microphone=(self)`, excluding cross-origin activities. | Include the exact trusted game origin in the microphone allowlist, while preserving all other policy restrictions. For GitHub project Pages, the origin is `https://celzor.github.io`, without the repository path. Account for proxy-supplied policies as well. |
-| `electron/main.ts:638–652`, using `electron/appOrigin.ts:isTrustedRendererUrl` | Both Electron permission handlers reject requests from external activity origins. | Add a narrow, explicit microphone permission path for the registered, opted-in activity frame; verify frame, origin, requested media types, and current session. Do not relax `isTrustedRendererUrl` globally or grant all media permissions to external frames. |
+`src/microphone.js` already checks the browser's effective microphone policy before requesting audio with `getUserMedia`. It handles denial and unavailable devices, meters audio locally without playback or recording, and releases the stream when disabled or the page closes. It needs no new Refract protocol message for this direct-capture path. The game relays only normalized loudness values for scoring; raw microphone audio is not sent through the activity relay.
 
-The external GitHub-hosted activity already has `allow-same-origin` in its sandbox. Packaged activities have opaque origins and cannot use that direct-capture approach. Refract's current activity protocol carries push-to-talk bindings, but it carries neither audio nor microphone levels.
+To verify the updated integration:
 
-A better fit for in-call play is a Refract capability that, after explicit user opt-in, computes the local microphone's normalized loudness in the existing voice pipeline and sends only a bounded scalar to that user's activity frame. This avoids opening the microphone a second time, avoids broad external-frame device permissions, works in desktop builds, and keeps raw audio within Refract. That design would require a new host-to-activity message in `sdk/src/activity.ts`, handling in `ActivityFrame.tsx`, and an updated official `refract-activity.js`. No Refract application files have been changed by this game project.
+1. Deploy the Refract frontend and backend changes, and install a desktop build containing the Electron changes if testing there. Register the final HTTPS game URL, then reload the Refract host page and reopen or refresh the activity.
+2. Open **Run details → Enable microphone** inside the game. Grant the browser permission or the desktop activity microphone prompt. Desktop capture uses the activity's own stream independently of the call's mute setting.
+3. Confirm the meter responds to normal speech. During a Solar Surge, confirm that voice adds points, then turn the microphone off and confirm the meter stops.
+4. If the game reports a blocked activity frame, check that the running host includes the updated iframe delegation and server policy. A reverse proxy can impose an additional restrictive Permissions-Policy; the effective browser policy must permit the registered game origin.
+
+Packaged activities with opaque origins cannot use direct device capture. Browser or operating-system permission can still deny access, and the game remains fully playable without the microphone. Local checks do not replace a signed-in real-call test of the deployed instance and target desktop build. No Refract application files have been changed by this game project.

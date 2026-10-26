@@ -1,4 +1,4 @@
-import { createGame, addPlayer, removePlayer, applyAction, tickGame, getStats, xpForLevel, getUpgradeCost, UPGRADE_CATALOG } from './game.js';
+import { createGame, addPlayer, removePlayer, applyAction, tickGame, getStats, getPlayerSpeed, getRaySpeedMultiplier, packGameState, unpackGameState, xpForLevel, getUpgradeCost, UPGRADE_CATALOG, ORB_CATALOG, LANE_COUNT } from './game.js';
 import { OrbitArena } from './arena.js';
 import { createActivityBridge } from './activity.js';
 import { GameAudio } from './audio.js';
@@ -45,30 +45,43 @@ document.getElementById('app').innerHTML = `
 <div class="app-shell">
   <header class="topbar">
     <div class="brand"><span class="brand-mark">${icon('prism')}</span><span class="brand-name">rogue<span>refract</span></span><span class="brand-version">EARLY ORBIT</span></div>
-    <nav class="nav" aria-label="Game"><button class="active" data-nav="orbit">${icon('orbit')} The orbit</button><button data-nav="library">${icon('gem')} Upgrade index</button><button data-nav="battle">${icon('swords')} Battle <span class="soon">SOON</span></button></nav>
-    <div class="top-actions"><span class="connection-pill"><i class="status-dot"></i><span id="connection-label">SOLO PRACTICE</span></span><button id="sound-button" class="icon-button" aria-label="Mute sound effects" title="Toggle sound">${icon(profile.sound ? 'sound' : 'mute')}</button><button id="fullscreen-button" class="icon-button" aria-label="Toggle fullscreen" title="Fullscreen (F)">${icon('expand')}</button><button id="settings-button" class="icon-button" aria-label="Settings" title="Settings">${icon('settings')}</button></div>
+    <div class="top-actions"><span class="connection-pill"><i class="status-dot"></i><span id="connection-label">SOLO PRACTICE</span></span><button id="details-button" class="secondary-button details-button">${icon('chart')}<span>Run details</span></button><button id="sound-button" class="icon-button" aria-label="Mute sound effects" title="Toggle sound">${icon(profile.sound ? 'sound' : 'mute')}</button><button id="fullscreen-button" class="icon-button" aria-label="Toggle fullscreen" title="Fullscreen (F)">${icon('expand')}</button><button id="settings-button" class="icon-button" aria-label="Settings" title="Settings">${icon('settings')}</button></div>
   </header>
-  <section class="intro"><div><div class="eyebrow">THE FIRST REVOLUTION</div><h1>A little chaos. <em>A lot of orbit.</em></h1><p>Catch the light. Build your spin. Make every revolution count.</p></div><div class="round-summary"><div><div class="mini-label">CURRENT HEAT</div><div class="round-number"><b id="round-number">01</b> <span>/ ∞</span></div></div><div class="timer-box"><div class="mini-label" id="timer-label">ROUND TIME</div><div id="timer" class="timer">01:00</div></div></div></section>
-  <main>
-    <div class="game-grid">
-      <aside class="column left-column" aria-label="Your pilot">
-        <section class="panel panel-padding pilot-panel"><div class="section-label">YOUR ORBIT ${icon('orbit')}</div><div class="pilot"><div class="avatar" id="pilot-avatar">Y</div><div><div class="pilot-name" id="pilot-name">You</div><div class="pilot-tag">LIGHT CHASER</div></div><span class="level-badge" id="level-badge">LV. 1</span></div><div class="score-block"><div class="score-label">TOTAL SCORE</div><div class="score-value" id="score">0</div><div class="score-caption"><span id="heat-score">+0</span> this heat</div></div><div class="xp-block"><div class="xp-label"><strong id="xp-level">LEVEL 1</strong><span id="xp-number">0 / 75 XP</span></div><div class="xp-track" role="progressbar" aria-label="Experience" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="xp-track"><div class="xp-fill" id="xp-fill"></div></div><div class="xp-caption">Every level earns a free upgrade.</div></div><div class="divider"></div><div class="stat-grid"><div><div class="stat-label">${icon('zap')} Spin speed</div><div class="stat-value"><span id="stat-speed">1.00</span><small>×</small></div></div><div><div class="stat-label">${icon('sparkles')} Crit chance</div><div class="stat-value" id="stat-crit">8%</div></div><div><div class="stat-label">${icon('sun')} Ray hits</div><div class="stat-value" id="stat-hits">0</div></div><div><div class="stat-label">${icon('orbit')} Revolutions</div><div class="stat-value" id="stat-laps">0</div></div></div><div class="wallet"><span class="wallet-label">${icon('gem')} Refract shards</span><strong class="wallet-value" id="credits">60</strong></div></section>
-        <section class="panel panel-padding build-panel"><div class="section-label">YOUR BUILD <span id="build-count">00</span></div><div class="run-build" id="run-build"><p class="empty-build">A blank canvas. A dangerous amount of potential.</p></div></section>
-        <div class="personal-best">${icon('trophy')}<div><span>YOUR PERSONAL BEST</span><strong id="personal-best">0 points</strong></div></div>
-      </aside>
-      <section class="column center-column" aria-label="Orbit arena">
-        <div class="panel arena-panel"><div class="arena-top"><h2 class="arena-title">${icon('orbit')} The refraction field</h2><span class="arena-status"><i class="status-dot"></i><span id="arena-status">PRACTICE LOBBY</span></span></div><div class="arena-stage"><canvas id="arena" class="arena-canvas" tabindex="0" aria-label="Tilted Refract orbit. Use A and D to switch lanes, Space to burst. Click glowing stars and chips for bonuses.">Your browser needs canvas support to display the orbit.</canvas><div class="arena-coordinate">FIELD <span>R–01</span><br>ORBITAL PLAYGROUND</div><div class="arena-coordinate right"><span id="pilot-count">06</span> PILOTS<br><span id="field-phase">AWAITING LAUNCH</span></div><div class="arena-overlay"><span class="arena-message" id="arena-message">${icon('sparkles')} Sixty seconds. Infinite ways around.</span></div></div><div class="arena-controls"><div class="lane-controls"><span class="lane-caption">ORBIT</span><div class="lane-group" role="group" aria-label="Orbit lane"><button data-lane="0" aria-pressed="true">${icon('orbit')} Inner</button><button data-lane="1" aria-pressed="false">${icon('orbit')} Middle</button><button data-lane="2" aria-pressed="false">${icon('orbit')} Outer</button></div></div><button class="boost-button" id="boost-button">${icon('zap')}<span id="boost-label">Orbit burst</span><kbd class="keycap">SPACE</kbd></button></div><div class="arena-tip"><span>${icon('info')} <b>Get hit. That's the point.</b> Rays, collisions & full revolutions score.</span><span>A / D to shift</span></div></div>
-        <div class="play-bar"><div><h3 class="play-bar-title" id="play-title">Your next obsession starts here.</h3><p id="play-description">60-second heats. Wild upgrades. Just one more spin.</p></div><button id="play-button" class="primary-button"><span id="play-label">Enter the orbit</span>${icon('arrow')}</button></div>
-      </section>
-      <aside class="column right-column" aria-label="Competition and microphone">
-        <section class="panel"><div class="leaderboard-heading"><div class="section-label">THE LEADERBOARD <span id="leaderboard-type">THIS RUN</span></div></div><div id="leaderboard" class="leaderboard-list"></div><div class="leaderboard-footer"><span id="roster-caption">YOU + 5 PRACTICE BOTS</span><span class="live-label" id="sync-label">LOCAL</span></div></section>
-        <section class="panel panel-padding mic-card"><div class="mic-icon">${icon('mic')}</div><h3 id="mic-title">Make some noise.</h3><p id="mic-description">Solar Surges turn your voice into bonus points. Keep an eye on the countdown.</p><div class="mic-meter" id="mic-meter" aria-label="Microphone level" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>${'<i></i>'.repeat(24)}</div><button class="secondary-button" id="mic-button">${icon('mic')} <span id="mic-button-label">Enable microphone</span></button><div class="mic-privacy" id="mic-note">OPT-IN · NORMAL SPEAKING IS ENOUGH</div></section>
-      </aside>
-    </div>
-    <section class="upgrade-section" id="shop"><div class="upgrade-header"><div><div class="upgrade-heading"><h2 id="shop-title">A better kind of power trip.</h2><span class="tag" id="shop-tag">28 UPGRADES</span></div><p id="shop-subtitle">A taste of what's in the shop. Your build gets wilder every round.</p></div><div class="shop-actions"><span class="free-token" id="free-tokens" hidden></span><button class="text-button" id="library-button">Explore the index ${icon('arrow')}</button><button class="secondary-button" id="reroll-button" hidden>${icon('refresh')}<span id="reroll-label">Reroll · 35</span></button></div></div><div class="upgrade-grid" id="upgrade-grid"></div><div class="shop-locked-note" id="shop-note">${icon('lock')} THE UPGRADE SHOP OPENS AFTER EACH HEAT</div></section>
+  <main class="play-layout">
+    <section class="intro"><div><div class="eyebrow">FIVE RINGS. NO BRAKES.</div><h1>A little chaos. <em>A lot of orbit.</em></h1></div><div class="round-summary"><div><div class="mini-label">HEAT</div><div class="round-number"><b id="round-number">01</b></div></div><div class="timer-box"><div class="mini-label" id="timer-label">ROUND TIME</div><div id="timer" class="timer">01:00</div></div></div></section>
+    <section class="panel pilot-panel run-hud" aria-label="Your pilot">
+      <div class="pilot"><div class="avatar" id="pilot-avatar">Y</div><div><div class="pilot-name" id="pilot-name">You</div><span class="level-badge" id="level-badge">LV. 1</span></div></div>
+      <div class="score-block"><div class="score-label">TOTAL SCORE</div><div class="score-value" id="score">0</div><div class="score-caption"><span id="heat-score">+0</span> this heat</div></div>
+      <div class="xp-block"><div class="xp-label"><strong id="xp-level">LEVEL 1</strong><span id="xp-number">0 / 75 XP</span></div><div class="xp-track" role="progressbar" aria-label="Experience" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="xp-track"><div class="xp-fill" id="xp-fill"></div></div><div class="xp-caption" id="banked-upgrades">Level up for a free upgrade.</div></div>
+      <div class="wallet"><span class="wallet-label">${icon('gem')}<span>SHARDS</span></span><strong class="wallet-value" id="credits">60</strong></div>
+    </section>
+    <section class="center-column" aria-label="Orbit arena">
+      <div class="panel arena-panel">
+        <div class="arena-top"><h2 class="arena-title">${icon('orbit')} The refraction field</h2><div class="field-effects" id="field-effects" aria-live="off"><span id="beam-count">3 BEAMS</span><span id="ray-speed">1.00x RAY SPEED</span><span id="pilot-effect" hidden></span></div><span class="arena-status"><i class="status-dot"></i><span id="arena-status">PRACTICE LOBBY</span></span></div>
+        <div class="arena-stage">
+          <canvas id="arena" class="arena-canvas" tabindex="0" aria-label="Five orbit rings. Use A and D or 1 through 5 to change rings, Space to burst. Absorb power-up orbs by touching them with your avatar.">Your browser needs canvas support to display the orbit.</canvas>
+          <div class="arena-coordinate">FIELD <span>R-01</span><br><span id="field-phase">AWAITING LAUNCH</span></div><div class="arena-coordinate right"><span id="pilot-count">06</span> PILOTS<br>MOVE TO ABSORB ORBS</div>
+          <div class="levelup-banner" id="levelup-banner" role="status" aria-live="polite" hidden><span class="levelup-emblem">${icon('sparkles')}</span><span><strong id="levelup-title">LEVEL UP</strong><small>FREE UPGRADE BANKED</small></span><b id="levelup-number">02</b></div>
+          <div class="arena-overlay"><span class="arena-message" id="arena-message">${icon('sparkles')} Find your ring. Catch the chaos.</span></div>
+          <section class="upgrade-section" id="shop" aria-labelledby="shop-title" tabindex="-1" hidden>
+            <div class="upgrade-header"><div><div class="eyebrow" id="shop-tag">BUY ROUND</div><div class="upgrade-heading"><h2 id="shop-title">Build something ridiculous.</h2></div><p id="shop-subtitle">Choose your next advantage.</p></div><div class="shop-actions"><span class="free-token" id="free-tokens" hidden></span><button class="secondary-button" id="reroll-button">${icon('refresh')}<span id="reroll-label">Reroll / 35</span></button></div></div>
+            <div class="upgrade-grid" id="upgrade-grid"></div>
+            <div class="shop-bottom"><span class="shop-locked-note" id="shop-note">${icon('gem')} +35 END-OF-HEAT SHARDS</span><div><button class="text-button" id="results-button">Heat results ${icon('chart')}</button><button class="text-button" id="library-button">Upgrade index ${icon('arrow')}</button></div></div>
+          </section>
+        </div>
+        <div class="arena-controls"><div class="lane-controls"><span class="lane-caption">RING <b id="current-ring">1</b></span><div class="lane-group" role="group" aria-label="Orbit ring">${Array.from({length:5},(_,i)=>`<button data-lane="${i}" aria-label="Ring ${i+1}" aria-pressed="${i===0}" title="Ring ${i+1} (press ${i+1})"><span>${i+1}</span></button>`).join('')}</div><span class="lane-hint">A / D to shift</span></div><button class="boost-button" id="boost-button">${icon('zap')}<span id="boost-label">Orbit burst</span><kbd class="keycap">SPACE</kbd></button></div>
+        <div class="arena-tip"><span>${icon('info')} <b>Move to an orb to absorb it.</b> Stack beams. Ice your rivals. Steal time.</span><span>1-5 select a ring</span></div>
+      </div>
+      <div class="play-bar"><div><h3 class="play-bar-title" id="play-title">Your next obsession starts here.</h3><p id="play-description">60-second heats. Temporary power-ups. Absolute chaos.</p></div><button id="play-button" class="primary-button"><span id="play-label">Enter the orbit</span>${icon('arrow')}</button></div>
+    </section>
   </main>
-  <footer class="footer"><span>NO FINISH LINE. JUST ONE MORE REVOLUTION.</span><span class="footer-refract"><img src="./assets/refract-icon.png" alt="" /> MADE FOR <a href="https://refract.chat" target="_blank" rel="noreferrer">REFRACT.CHAT</a><span> · </span><button class="text-button" id="help-button">How to play ${icon('info')}</button></span></footer>
+  <footer class="footer"><span>NO FINISH LINE. JUST ONE MORE REVOLUTION.</span><span class="footer-refract"><img src="./assets/refract-icon.png" alt="" /> MADE FOR <a href="https://refract.chat" target="_blank" rel="noreferrer">REFRACT.CHAT</a><button class="text-button" id="help-button">How to play ${icon('info')}</button></span></footer>
 </div>
+<dialog id="run-details" aria-labelledby="details-title"><div class="dialog-header"><div><div class="eyebrow">YOUR RUN, AT A GLANCE</div><h2 id="details-title">Behind the chaos.</h2></div><button id="details-close" class="icon-button" aria-label="Close run details">${icon('close')}</button></div><div class="dialog-body details-grid">
+  <section class="panel"><div class="leaderboard-heading"><div class="section-label">THE LEADERBOARD <span id="leaderboard-type">THIS RUN</span></div></div><div id="leaderboard" class="leaderboard-list"></div><div class="leaderboard-footer"><span id="roster-caption">YOU + 5 PRACTICE BOTS</span><span class="live-label" id="sync-label">LOCAL</span></div></section>
+  <div class="column"><section class="panel panel-padding"><div class="section-label">PILOT STATS ${icon('orbit')}</div><div class="stat-grid"><div><div class="stat-label">${icon('zap')} Spin speed</div><div class="stat-value"><span id="stat-speed">1.00</span><small>x</small></div></div><div><div class="stat-label">${icon('sparkles')} Crit chance</div><div class="stat-value" id="stat-crit">8%</div></div><div><div class="stat-label">${icon('sun')} Ray hits</div><div class="stat-value" id="stat-hits">0</div></div><div><div class="stat-label">${icon('orbit')} Revolutions</div><div class="stat-value" id="stat-laps">0</div></div></div></section><section class="panel panel-padding build-panel"><div class="section-label">YOUR BUILD <span id="build-count">00</span></div><div class="run-build" id="run-build"><p class="empty-build">Your next build starts in the buy round.</p></div></section><div class="personal-best">${icon('trophy')}<div><span>YOUR PERSONAL BEST</span><strong id="personal-best">0 points</strong></div></div></div>
+  <section class="panel panel-padding mic-card"><div class="mic-icon">${icon('mic')}</div><h3 id="mic-title">Make some noise.</h3><p id="mic-description">Solar Surges turn your voice into bonus points. Opt in, then keep an eye on the countdown.</p><div class="mic-meter" id="mic-meter" aria-label="Microphone level" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>${'<i></i>'.repeat(24)}</div><button class="secondary-button" id="mic-button">${icon('mic')} <span id="mic-button-label">Enable microphone</span></button><div class="mic-privacy" id="mic-note">OPT-IN / NORMAL SPEAKING IS ENOUGH</div></section>
+</div></dialog>
 <div class="toast-stack" id="toasts" role="status" aria-live="polite"></div>
 <dialog id="modal" aria-labelledby="modal-title"><div class="dialog-header"><div><div class="eyebrow" id="modal-eyebrow">ORBITAL FIELD GUIDE</div><h2 id="modal-title">How to play</h2></div><button class="icon-button" id="modal-close" aria-label="Close dialog">${icon('close')}</button></div><div class="dialog-body" id="modal-body"></div></dialog>`;
 
@@ -92,6 +105,7 @@ let modalKind = '';
 let errorAt = 0;
 let nextVoiceAt = 0;
 let micBusy = false;
+let levelupTimer;
 
 function addPracticeRoster() {
   addPlayer(state, { id:'you', name:profile.name, color:'#bcf6cf' });
@@ -115,9 +129,26 @@ const mic = new VoiceMeter({
   },
   onError(message) { toast(message, 'error'); put('mic-note', message); $('mic-meter').hidden = true; put('mic-button-label','Enable microphone'); },
 });
-const arena = new OrbitArena($('arena'), { onCollect:(pickupId) => { if (state.phase === 'playing') send({type:'collect',pickupId}); } });
+const arena = new OrbitArena($('arena'));
+
+function showLevelUp(level) {
+  clearTimeout(levelupTimer);
+  const banner = $('levelup-banner');
+  put('levelup-title', `LEVEL ${level} UNLOCKED`);
+  put('levelup-number', String(level).padStart(2, '0'));
+  banner.hidden = false;
+  const reduced = arena.reducedMotion;
+  banner.classList.toggle('reduced-effects', reduced);
+  if (!reduced) {
+    banner.getAnimations().forEach((animation) => animation.cancel());
+    banner.animate([{ opacity:0, transform:'translate(-50%, -10px) scale(.94)' }, { opacity:1, transform:'translate(-50%, 0) scale(1)' }], { duration:280, easing:'ease-out' });
+    $('level-badge').animate([{ boxShadow:'0 0 0 0 #bcf6cf00' }, { boxShadow:'0 0 22px 6px #bcf6cf66', color:'#fff' }, { boxShadow:'0 0 0 0 #bcf6cf00' }], { duration:1000 });
+  }
+  levelupTimer = setTimeout(() => { banner.hidden = true; }, 2400);
+}
 
 function validateState(s) {
+  try { s = unpackGameState(s); } catch { return false; }
   return s?.version === 1 && ['lobby','playing','shop'].includes(s.phase) && Number.isFinite(s.now) && Number.isFinite(s.phaseEndsAt)
     && Number.isSafeInteger(s.eventSeq) && Array.isArray(s.players) && s.players.length <= 8
     && s.players.every((p) => typeof p.id === 'string' && typeof p.name === 'string' && /^#[\da-f]{6}$/i.test(p.color) && Number.isFinite(p.score) && Number.isFinite(p.angle) && p.upgrades && typeof p.upgrades === 'object')
@@ -138,7 +169,7 @@ function publish() {
   if (!bridge?.isHost) return;
   // Avatars come from the authenticated roster and need not use relay payload space.
   const snapshot = { ...state, players:state.players.map((p) => ({...p,avatarUrl:null})) };
-  bridge.publishState(snapshot);
+  bridge.publishState(packGameState(snapshot));
 }
 
 function processEvents() {
@@ -150,18 +181,18 @@ function processEvents() {
     if (event.playerId === selfId && recent) {
       const sound = event.type === 'ray' && event.critical ? 'critical' : event.type === 'surge' ? 'voice' : event.type;
       audio.play(sound);
-      if (event.type === 'levelup') toast(`Level ${event.amount}! A free upgrade is waiting in the shop.`, 'success');
+      if (event.type === 'levelup') showLevelUp(event.amount);
       if (event.type === 'purchase' || event.type === 'collect') toast(event.text, 'success');
     }
-    if (event.type === 'round-start') { if (recent) audio.play('start'); if (modalKind === 'results') closeModal(); }
+    if (event.type === 'round-start') { if (recent) audio.play('start'); if (['results', 'library'].includes(modalKind)) closeModal(); }
     if (event.type === 'surge-start' && recent) toast(mic.enabled ? 'Solar Surge! Speak to turn your voice into points.' : 'Solar Surge! Your mic can score for the next 8 seconds.');
     if (event.type === 'round-end') {
       if (recent) audio.play('roundend');
       const p = me();
       if (p) { profile.completed++; profile.bestHeat = Math.max(profile.bestHeat, p.roundScore); profile.best = Math.max(profile.best, p.score); saveProfile(); }
-      openResults();
+      $('levelup-banner').hidden = true;
     }
-    if (event.type === 'reset') { saveProfile(); toast('Fresh run. A new orbit awaits.'); }
+    if (event.type === 'reset') { clearTimeout(levelupTimer); $('levelup-banner').hidden = true; saveProfile(); toast('Fresh run. A new orbit awaits.'); }
   }
 }
 
@@ -196,7 +227,7 @@ bridge = createActivityBridge({
     renderUI();
   },
   onState(snapshot) {
-    state = snapshot;
+    state = unpackGameState(snapshot);
     for (const p of state.players) p.avatarUrl = bridge.participants.find((person) => String(person.id) === p.id)?.avatarUrl || null;
     clockOffset = state.now - Date.now(); lastSnapshotAt = performance.now(); snapshotReady = true;
     processEvents(); renderUI();
@@ -230,6 +261,11 @@ function renderUI() {
   const p = me() || addPlayer(createGame(), {id:selfId,name:bridge.self?.name || 'Spectator'});
   const now = gameNow();
   const playing = state.phase === 'playing', shopping = state.phase === 'shop';
+  const wasShopping = document.documentElement.dataset.phase === 'shop';
+  document.documentElement.dataset.phase = state.phase;
+  document.documentElement.classList.toggle('reduced-effects', arena.reducedMotion);
+  $('shop').hidden = !shopping;
+  if (wasShopping && !shopping && $('shop').contains(document.activeElement)) $('arena').focus({preventScroll:true});
   const stats = getStats(p, now);
   const seconds = state.phase === 'lobby' ? 60 : Math.max(0, Math.ceil((state.phaseEndsAt - now) / 1000));
   put('timer', `${String(Math.floor(seconds / 60)).padStart(2,'0')}:${String(seconds % 60).padStart(2,'0')}`);
@@ -242,8 +278,18 @@ function renderUI() {
   const xpPercent = Math.min(100, p.xp / xpForLevel(p.level) * 100);
   put('xp-level',`LEVEL ${p.level}`); put('xp-number',`${format(p.xp)} / ${xpForLevel(p.level)} XP`);
   $('xp-fill').style.width = `${xpPercent}%`; $('xp-track').setAttribute('aria-valuenow',String(Math.round(xpPercent)));
+  put('banked-upgrades', p.upgradeTokens ? `${p.upgradeTokens} free upgrade${p.upgradeTokens === 1 ? '' : 's'} banked` : 'Level up for a free upgrade.');
   const burst = playing && p.boostUntil > now;
-  put('stat-speed',(stats.speed / 1.05 * (burst ? 1.65 : 1)).toFixed(2)); put('stat-crit',`${Math.round(stats.critChance * 100)}%`); put('stat-hits',format(p.hits)); put('stat-laps',format(p.revolutions)); put('credits',format(p.credits));
+  put('stat-speed',(getPlayerSpeed(p, now) / 1.05).toFixed(2)); put('stat-crit',`${Math.round(stats.critChance * 100)}%`); put('stat-hits',format(p.hits)); put('stat-laps',format(p.revolutions)); put('credits',format(p.credits));
+  put('current-ring', p.lane + 1);
+  put('beam-count', `${state.rays.length || 3} BEAMS`);
+  put('ray-speed', `${getRaySpeedMultiplier(state, now).toFixed(2)}× RAY SPEED`);
+  const effectLabels = [['frozenUntil','FROZEN'],['gravityUntil','GRAVITY'],['slowUntil','ICED'],['shieldUntil','SHIELD'],['overdriveUntil','OVERDRIVE'],['echoUntil','ECHO'],['starlightUntil','STARLIGHT'],['chipUntil','SPEED']]
+    .filter(([key]) => playing && p[key] > now).map(([key,label]) => `${label} ${Math.ceil((p[key]-now)/1000)}s`);
+  put('pilot-effect', effectLabels.slice(0, 2).join(' · ') + (effectLabels.length > 2 ? ` +${effectLabels.length-2}` : ''));
+  $('pilot-effect').hidden = effectLabels.length === 0;
+  $('pilot-effect').title = effectLabels.join(' · ');
+  $('pilot-effect').classList.toggle('hostile-effect', playing && (p.frozenUntil > now || p.slowUntil > now || p.gravityUntil > now));
   profile.best = Math.max(profile.best,p.score);
   put('personal-best',`${format(profile.best)} points`);
   const nextAvatarSignature = `${p.id}|${p.avatarUrl}|${p.name}`;
@@ -276,7 +322,7 @@ function renderUI() {
     if (state.surge.active) message = `${icon('mic')} SOLAR SURGE · ${Math.max(0,Math.ceil((state.surge.endsAt - now)/1000))}s · ${mic.enabled ? 'Make some noise!' : 'Voice earns bonus points'}`;
     else if (p.starlightUntil > now) message = `${icon('star')} STARLIGHT · 1.5× points · ${Math.ceil((p.starlightUntil-now)/1000)}s`;
     else if (p.chipUntil > now) message = `${icon('gem')} REFRACT CHIP · +25% speed · ${Math.ceil((p.chipUntil-now)/1000)}s`;
-    else message = `${icon('star')} Click glowing stars & chips · ${state.surge.nextAt < state.phaseEndsAt ? `Solar Surge in ${Math.max(0,Math.ceil((state.surge.nextAt-now)/1000))}s` : 'Bring it home.'}`;
+    else message = `${icon('star')} Touch an orb to absorb it · ${state.surge.nextAt < state.phaseEndsAt ? `Solar Surge in ${Math.max(0,Math.ceil((state.surge.nextAt-now)/1000))}s` : 'Bring it home.'}`;
   } else if (shopping) message = `${icon('gem')} Bank the shards. Break the next round.`;
   if ($('arena-message').innerHTML !== message) $('arena-message').innerHTML = message;
   $('arena-message').classList.toggle('surge-live',playing && state.surge.active);
@@ -289,35 +335,36 @@ function renderUI() {
     $('play-button').disabled = p.ready || !snapshotReady;
   } else if (playing) {
     const rank = sorted.findIndex((v)=>v.id === selfId)+1;
-    put('play-title',`${rank === 1 ? 'You are setting the pace.' : `You're #${rank}. The light is on your side.`}`); put('play-description','Shift lanes for collisions. Burst for double points. Click the stars.'); put('play-label','Heat in progress'); $('play-button').disabled = true;
+    put('play-title',`${rank === 1 ? 'You are setting the pace.' : `You're #${rank}. The light is on your side.`}`); put('play-description','Shift rings to absorb orbs. Stack beams. Unleash the chaos.'); put('play-label','Heat in progress'); $('play-button').disabled = true;
   } else {
     put('play-title',snapshotReady ? 'Your next obsession starts here.' : 'Finding your place in the orbit…');
     put('play-description',mode === 'refract' ? 'Everyone in this activity shares the same orbit and score table.' : '60-second heats. Wild upgrades. Just one more spin.');
     put('play-label',!snapshotReady ? 'Syncing…' : bridge.isHost ? 'Enter the orbit' : 'Waiting for host'); $('play-button').disabled = !bridge.isHost || !snapshotReady;
   }
-  put('shop-title',shopping ? 'Build something ridiculous.' : 'A better kind of power trip.');
-  put('shop-tag',shopping ? 'SHOP OPEN' : '28 UPGRADES');
-  put('shop-subtitle',shopping ? 'Level-up choices are free. Spend your shards for even more power.' : "A taste of what's in the shop. Your build gets wilder every round.");
   $('free-tokens').hidden = !shopping || !p.upgradeTokens;
   put('free-tokens',`${p.upgradeTokens} FREE CHOICE${p.upgradeTokens === 1 ? '' : 'S'}`);
-  $('reroll-button').hidden = !shopping; $('reroll-button').disabled = p.credits < p.rerollCost;
-  put('reroll-label',`Reroll · ${p.rerollCost}`); $('library-button').hidden = shopping;
-  $('shop-note').hidden = shopping;
-  const offers = shopping ? p.shopOffers : ['kinetic-drive','triple-prism','radiant-bloom'];
+  $('reroll-button').disabled = p.credits < p.rerollCost || !snapshotReady || spectator;
+  put('reroll-label',`Reroll / ${p.rerollCost}`);
+  put('shop-subtitle',p.upgradeTokens ? 'Your level-up choices are free. Spend shards for more.' : 'Spend your shards. Make the next heat yours.');
+  const offers = shopping && !spectator ? p.shopOffers : [];
   const nextShopSignature = JSON.stringify([state.phase,offers,p.upgrades,p.upgradeTokens,p.credits,snapshotReady]);
-  if (nextShopSignature !== shopSignature) { shopSignature = nextShopSignature; $('upgrade-grid').innerHTML = offers.map((id) => catalog.get(id)).filter(Boolean).map((u)=>upgradeCard(u,p)).join('') || '<p class="empty-build">Every upgrade is maxed. This orbit belongs to you.</p>'; }
+  if (nextShopSignature !== shopSignature) {
+    shopSignature = nextShopSignature;
+    $('upgrade-grid').innerHTML = shopping ? offers.map((id) => catalog.get(id)).filter(Boolean).map((u)=>upgradeCard(u,p)).join('') || `<p class="empty-build">${spectator ? 'The pilots are choosing their upgrades.' : 'Every upgrade is maxed. This orbit belongs to you.'}</p>` : '';
+  }
   put('mic-title',state.surge.active ? 'Your voice. Your points.' : 'Make some noise.');
   if (mic.enabled) put('mic-description',state.surge.active ? 'Solar Surge is live. Speaking earns up to 100 extra points per second.' : 'Mic ready. Your next Solar Surge is coming. Voice only scores during the window.');
   if (spectator) { put('play-title','The orbit is full. Enjoy the show.'); put('play-description','Eight pilots are spinning. A place opens when a pilot leaves.'); put('play-label','Spectating'); $('play-button').disabled = true; }
 }
 
 function openModal(kind, title, content, eyebrow = 'ORBITAL FIELD GUIDE') {
+  if ($('run-details').open) $('run-details').close();
   modalKind = kind; put('modal-title',title); put('modal-eyebrow',eyebrow); $('modal-body').innerHTML = content;
   if (!$('modal').open) $('modal').showModal();
 }
 function closeModal() { $('modal').close(); modalKind = ''; }
 function openHelp() {
-  openModal('help','Good things come around.',`<p>You're a pilot in the Refract orbit. Getting hit is a good thing. Build an absurd spin and climb the shared leaderboard across as many heats as you like.</p><div class="help-steps"><div class="help-step">${icon('sun')}<strong>01 / Catch the light</strong><p>Light rays score 25 base points, collisions 30, and full revolutions 35. Your pilot keeps spinning automatically.</p></div><div class="help-step">${icon('zap')}<strong>02 / Find your advantage</strong><p>Shift between three lanes with A / D. Press Space for a burst: +65% speed and double points for 4 seconds.</p></div><div class="help-step">${icon('star')}<strong>03 / Grab the good stuff</strong><p>Click stars for +60 points and 1.5× scoring for 6 seconds. Chips give +25 shards and +25% speed for 6 seconds. First click wins!</p></div><div class="help-step">${icon('mic')}<strong>04 / Make some noise</strong><p>Opt into the mic for two 8-second Solar Surges per heat. Normal speaking earns bonus points. Mic audio stays on your device.</p></div><div class="help-step">${icon('gem')}<strong>05 / Break your build</strong><p>Heats last 60 seconds. You have 30 seconds in the shop. Every level earns a free upgrade; buy extras with shards or reroll your choices.</p></div><div class="help-step">${icon('trophy')}<strong>06 / One more revolution</strong><p>Builds, levels, and total scores continue between heats. Ready up to launch early. A new run resets the build; your personal best stays saved.</p></div></div><p class="help-note">SOLO = YOU + 5 LABELED BOTS. REFRACT = REAL CALL PARTICIPANTS.<br>F = FULLSCREEN · ESC = CLOSE DIALOG</p>`);
+  openModal('help','A field guide to absolute chaos.',`<p>Keep orbiting, catch light rays, and collide with rivals for points. Temporary orbs live on the five rings: move your avatar into one to absorb it and collect its points bonus.</p><div class="help-steps"><div class="help-step">${icon('orbit')}<strong>Pick your ring</strong><p>A / D or the arrow keys move inward and outward. Keys 1-5 select a ring directly. On touchscreens, use the numbered ring buttons.</p></div><div class="help-step">${icon('zap')}<strong>Time your burst</strong><p>Space gives +65% speed and double scoring for four seconds. Chase an orb, set up a collision, or escape a rival.</p></div><div class="help-step">${icon('sun')}<strong>Stack the field</strong><p>Beam orbs add more rays from the core, up to 50 at once. Haste orbs make those rays spin faster. Each stack expires independently.</p></div><div class="help-step">${icon('gem')}<strong>Build between heats</strong><p>Every level banks a free upgrade. After a 60-second heat, the buy round opens right here for 30 seconds. Ready up to launch early.</p></div></div><h3 class="orb-guide-title">Know your orbs</h3><div class="orb-guide">${ORB_CATALOG.map((orb)=>`<div><span style="--orb-color:${orb.color}"></span><p><strong>${escape(orb.name)}</strong> ${escape(orb.description)} <small>+${orb.points} points</small></p></div>`).join('')}</div><p class="help-note">Temporary powers clear between heats. Levels, permanent upgrades, and total scores carry on.<br>Optional microphone bonuses: open Run details to enable Solar Surges.<br>F = FULLSCREEN / ESC = CLOSE DIALOG</p>`);
 }
 function openLibrary() {
   openModal('library','Find your next unfair advantage.',`<p>28 upgrades. Hundreds of combinations. Stack levels, create synergies, and see how far your orbit goes.</p><div class="library-toolbar"><input id="upgrade-search" type="search" placeholder="Search upgrades or effects…" aria-label="Search upgrades" /><select id="upgrade-filter" aria-label="Filter rarity"><option value="all">All rarities</option><option value="common">Common</option><option value="rare">Rare</option><option value="epic">Epic</option><option value="legendary">Legendary</option></select></div><div class="library-grid" id="library-grid"></div>`,'THE UPGRADE INDEX');
@@ -331,7 +378,14 @@ function filterLibrary() {
 function openSettings() {
   openModal('settings','Tune your orbit.',`<div class="settings-row"><div><strong>Sound effects</strong><p>Soft synth hits, refractions, and a little victory noise.</p></div><input id="setting-sound" type="checkbox" aria-label="Sound effects" ${audio.enabled ? 'checked' : ''} /></div><div class="settings-row"><div><strong>Reduced effects</strong><p>Keep the orbit moving with fewer particles and light pulses.</p></div><input id="setting-motion" type="checkbox" aria-label="Reduced visual effects" ${arena.reducedMotion ? 'checked' : ''} /></div><div class="settings-row"><div><strong>Microphone</strong><p>Optional, local volume analysis. Nothing is recorded.</p></div><button class="secondary-button" id="settings-mic">${mic.enabled ? 'Turn off' : 'Enable mic'}</button></div>${mode === 'solo' ? `<div class="settings-row"><div><strong>Pilot name</strong><p>Your name in solo practice.</p></div><input id="pilot-name-input" maxlength="24" value="${escape(profile.name)}" aria-label="Pilot name" style="width:120px;background:#100e16;border:1px solid #ffffff12;padding:8px;color:#c4b3d2;border-radius:5px" /></div>` : ''}<div class="settings-row"><div><strong>Fresh run</strong><p>Reset the build and scores for everyone in this orbit.</p></div><button class="secondary-button" id="reset-run" ${bridge.isHost ? '' : 'disabled'}>New run</button></div><p class="help-note">${mode === 'refract' ? 'Your Refract identity and call participants are used automatically. The first participant coordinates the simulation.' : 'To play with friends, add the deployed GitHub Pages URL to your Refract instance’s Activities catalog and open it in a call.'}</p>`,'FLIGHT CONTROLS');
   $('setting-sound').onchange = (e) => toggleSound(e.target.checked);
-  $('setting-motion').onchange = (e) => { arena.reducedMotion = e.target.checked; };
+  $('setting-motion').onchange = (e) => {
+    arena.reducedMotion = e.target.checked;
+    document.documentElement.classList.toggle('reduced-effects', arena.reducedMotion);
+    if (arena.reducedMotion) {
+      $('levelup-banner').getAnimations().forEach((animation) => animation.cancel());
+      $('level-badge').getAnimations().forEach((animation) => animation.cancel());
+    }
+  };
   $('settings-mic').onclick = () => { closeModal(); toggleMic(); };
   $('reset-run').onclick = () => { send({type:'reset'}); closeModal(); };
   if ($('pilot-name-input')) $('pilot-name-input').onchange = (e) => { profile.name = e.target.value.trim().slice(0,24) || 'You'; saveProfile(); const p = me(); if (p) p.name = profile.name; renderUI(); };
@@ -343,7 +397,7 @@ function openResults() {
   const p = me(); if (!p) return;
   const index = state.lastResults.findIndex((r)=>r.id === selfId);
   openModal('results',`Heat ${state.round}: that's a wrap.`,`<div class="results-summary"><div><div class="results-score">${format(p.roundScore)}</div><div class="results-caption">POINTS THIS HEAT · FINISHED #${index+1}</div></div><div class="level-badge">${p.upgradeTokens} FREE UPGRADE${p.upgradeTokens===1?'':'S'}</div></div>${state.lastResults.map((r,i)=>`<div class="results-row ${r.id===selfId?'self':''}"><span>${String(i+1).padStart(2,'0')} &nbsp; ${escape(r.name)}</span><span>${format(r.score)}</span></div>`).join('')}<p class="help-note">+35 END-OF-HEAT SHARDS. YOUR BUILD AND TOTAL SCORE CARRY ON.</p><div class="results-cta"><button id="results-shop" class="primary-button">Make your next upgrade ${icon('arrow')}</button></div>`,'A LITTLE MORE POWER. A LITTLE MORE CHAOS.');
-  $('results-shop').onclick = () => { closeModal(); $('shop').scrollIntoView({behavior:arena.reducedMotion?'instant':'smooth',block:'center'}); };
+  $('results-shop').onclick = () => { closeModal(); if (state.phase === 'shop') $('shop').focus({preventScroll:true}); };
 }
 function toggleSound(enabled = !audio.enabled) {
   audio.unlock(); audio.setEnabled(enabled); profile.sound = enabled; saveProfile();
@@ -368,6 +422,9 @@ $('fullscreen-button').onclick = () => bridge.setFullscreen();
 $('mic-button').onclick = toggleMic;
 $('settings-button').onclick = openSettings;
 $('help-button').onclick = openHelp;
+$('details-button').onclick = () => $('run-details').showModal();
+$('details-close').onclick = () => $('run-details').close();
+$('results-button').onclick = openResults;
 $('library-button').onclick = openLibrary;
 $('reroll-button').onclick = () => { send({type:'reroll'}); audio.play('reroll'); };
 $('modal-close').onclick = closeModal;
@@ -378,10 +435,11 @@ document.querySelectorAll('[data-lane]').forEach((b)=>b.onclick=()=>send({type:'
 $('upgrade-grid').addEventListener('click',(e)=>{ const b=e.target.closest('[data-buy]'); if(b && !b.disabled)send({type:'buy',upgradeId:b.dataset.buy}); });
 document.addEventListener('pointerdown',()=>audio.unlock(),{once:true});
 document.addEventListener('keydown',(e)=>{
-  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || ['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName) || e.target.isContentEditable || $('modal').open || !me()) return;
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || ['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName) || e.target.isContentEditable || $('modal').open || $('run-details').open || !me()) return;
   if(e.code==='Space'){e.preventDefault();if(state.phase==='playing' && gameNow()>=me()?.boostReadyAt)send({type:'boost'});}
   if((state.phase==='lobby' || state.phase==='playing') && (e.code==='KeyA' || e.code==='ArrowLeft')){e.preventDefault();send({type:'lane',lane:Math.max(0,(me()?.lane||0)-1)});}
-  if((state.phase==='lobby' || state.phase==='playing') && (e.code==='KeyD' || e.code==='ArrowRight')){e.preventDefault();send({type:'lane',lane:Math.min(2,(me()?.lane||0)+1)});}
+  if((state.phase==='lobby' || state.phase==='playing') && (e.code==='KeyD' || e.code==='ArrowRight')){e.preventDefault();send({type:'lane',lane:Math.min(LANE_COUNT-1,(me()?.lane||0)+1)});}
+  if((state.phase==='lobby' || state.phase==='playing') && /^Digit[1-5]$/.test(e.code)){e.preventDefault();send({type:'lane',lane:Number(e.code.slice(-1))-1});}
   if(e.code==='KeyF')bridge.setFullscreen();
 });
 
@@ -402,4 +460,4 @@ let animation;
 function animate(now){arena.render(state,selfId,now,state.phase==='playing' ? (now-lastSnapshotAt)/1000 : 0);animation=requestAnimationFrame(animate);}
 renderUI(); animation=requestAnimationFrame(animate);
 window.addEventListener('pagehide',()=>{const p=me();if(p){profile.best=Math.max(profile.best,p.score);saveProfile();}mic.stop();$('mic-meter').hidden=true;put('mic-button-label','Enable microphone');put('mic-note','OPT-IN · NORMAL SPEAKING IS ENOUGH');});
-window.addEventListener('beforeunload',()=>{clearInterval(simulationTimer);clearInterval(publishTimer);clearInterval(uiTimer);cancelAnimationFrame(animation);mic.destroy();audio.destroy();arena.destroy();bridge.destroy();});
+window.addEventListener('beforeunload',()=>{clearTimeout(levelupTimer);clearInterval(simulationTimer);clearInterval(publishTimer);clearInterval(uiTimer);cancelAnimationFrame(animation);mic.destroy();audio.destroy();arena.destroy();bridge.destroy();});

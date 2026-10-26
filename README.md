@@ -23,17 +23,21 @@ npm run preview
 
 ## The loop
 
-- **60-second heats:** rays, collisions, and revolutions award points, XP, and shards. Your pilot spins automatically; change lanes for opportunities.
+- **One-screen play:** a compact pilot HUD keeps the arena in view. The shop only appears during buy rounds, directly over the arena. Leaderboard, build, statistics and microphone controls live in **Run details**.
+- **Five rings:** orbit automatically; move inward/outward with A / D or the arrow keys, select a ring with 1-5, or tap its numbered control.
+- **60-second heats:** rays, collisions, revolutions and absorbed orbs award points. Rays also grant XP and shards.
+- **Contact pickups:** orbs spawn directly on the rings. Move your avatar into one to absorb it; the first physical contact wins. Every orb grants a points bonus. Clicking an orb does not collect it.
+- **Beam chaos:** Prism bloom adds five centre beams for 20 seconds per stack, capped at 50 total. Light rush stacks +25% ray rotation speed, up to 3x. Each field stack expires independently.
+- **Rival effects:** ice halves rivals' movement speed; time stop freezes movement and ring changes; gravity wells pull rivals inward every 0.75 seconds. Prism shields clear and block hostile effects.
+- **Other temporary powers:** Starlight boosts scoring, Refract chips grant shards and speed, Overdrive increases spin speed, and Echo repeats ray point rewards. Repeated personal buffs extend their timers within a cap. All temporary powers clear between heats.
 - **Orbit burst:** +65% speed and double scoring for four seconds, with a 20-second cooldown before upgrades.
-- **Stars:** click for 60 points and 1.5× scoring for six seconds.
-- **Refract chips:** click for 25 shards and +25% speed for six seconds. Pickups are shared; the first accepted claim wins.
 - **Solar Surges:** two eight-second windows per heat, starting at 15 and 40 seconds. Optional local microphone loudness earns up to 100 points per second. Normal speaking is enough; audio is never recorded or transmitted. Only a normalized loudness value is relayed.
-- **Level up:** each level earns a free shop choice.
-- **30-second shop:** choose among three rolling offers, buy additional upgrades with shards, or pay for a reroll. All human players readying up starts the next heat early.
+- **Level up:** each level earns a free shop choice, with an arena banner, expanding avatar rings and spark trails. Reduced effects use a steady halo.
+- **30-second shop:** buy rounds replace the arena view; choose among three rolling offers, buy additional upgrades with shards, or pay for a reroll. All human players readying up starts the next heat early.
 - **28 stackable upgrades:** velocity, critical triples, critical multipliers, echoes, combos, collision bonuses, passive points, shard income, XP boosts, burst tuning, and compound effects.
 - **Endless run:** XP, levels, upgrades, and total scores persist between heats. New runs reset the shared build and scores; personal bests persist in browser storage. Session state is held by participants, so a run ends when everyone closes it. Hosts can start a fresh run in Settings.
 
-Controls: **A / D** or **Left / Right** to switch lanes, **Space** to burst, **F** for fullscreen, and pointer/touch to collect pickups. All game controls also have buttons. Reduced-motion preferences suppress decorative particles and pulses, and can be adjusted in Settings.
+Controls: **A / D** or **Left / Right** to change rings, **1-5** to select a ring directly, **Space** to burst, and **F** for fullscreen. All gameplay actions also have touch buttons. Reduced-motion preferences suppress decorative particles and pulses, and can be adjusted in Settings.
 
 ## Deploy to GitHub Pages
 
@@ -49,7 +53,7 @@ No public deployment is performed by the local build. See [Refract integration](
 
 ### Microphone in Refract
 
-Direct HTTPS/localhost play supports opt-in microphone metering now. The inspected Refract application blocks cross-origin activity microphone capture at its iframe, production Permissions-Policy, and Electron permission layers. The game detects this and explains it. Embedded microphone play needs a corresponding Refract app change; the [integration guide](docs/REFRACT-INTEGRATION.md#optional-microphone-loudness-bonus) identifies the exact files and recommends an explicitly consented loudness relay using Refract's existing voice pipeline. Sound effects, pickups, and every other scoring source work without microphone capture.
+The updated local Refract source supports opt-in microphone capture for registered HTTPS activities through iframe delegation, its server Permissions-Policy, and a separate desktop consent prompt. Rogue Refract's existing microphone meter is compatible: open **Run details → Enable microphone**, grant access, and speak during a Solar Surge. Deploy the corresponding Refract changes and reload the host page before testing; local source checks do not confirm the live instance or desktop build. See the [integration guide](docs/REFRACT-INTEGRATION.md#optional-microphone-loudness-bonus) for requirements and verification steps. The game remains playable without microphone access.
 
 ## Multiplayer and future battles
 
@@ -57,13 +61,13 @@ The first participant coordinates a fixed-step simulation. Refract supplies auth
 
 `src/game.js` is pure simulation; `src/activity.js` handles identity, membership, and transport; the renderer and audio are independent. The host validates commands, affordability, phase, pickup ownership, mic sampling rate, and cooldowns. It publishes two compact snapshots per second; raw audio, particles, and avatar images are excluded from relay state.
 
-The future battle mode can add move selection, target IDs, statuses, elemental affinities, and revolution-triggered turns to this same action/event model. The Battle panel is a labeled roadmap preview, not a playable mode. Casual play trusts the coordinating browser; ranked or adversarial PvP will need a server referee and persistent match records.
+The future battle mode can add move selection, target IDs, statuses, elemental affinities, and revolution-triggered turns to this same action/event model. Casual play trusts the coordinating browser; ranked or adversarial PvP will need a server referee and persistent match records.
 
 ## Verification
 
 `npm test` covers deterministic simulation, all scoring sources, round transitions, economy validation, upgrades, pickups, microphone caps, relay authentication, catch-up, and host handover. Browser harnesses in `tests/browser.mjs` and `tests/multiplayer.mjs` run separately with Playwright supplied by the environment. They exercise real UI and the official iframe helper against a simulated authenticated Refract relay. A real signed-in Refract call remains the final integration acceptance check.
 
-With the dev server running and Playwright available, run `node tests/browser.mjs` and `node tests/multiplayer.mjs`. `PLAYWRIGHT_PATH` can point to an existing Playwright package directory; `TEST_URL` selects a different preview URL. On Windows the harnesses use installed Microsoft Edge by default. The solo harness saves desktop and mobile screenshots under `test-results/`.
+With the dev server running and Playwright available, run `node tests/browser.mjs` and `node tests/multiplayer.mjs`. `PLAYWRIGHT_PATH` can point to an existing Playwright package directory; `TEST_URL` selects a different preview URL. On Windows the harnesses use installed Microsoft Edge by default. The solo harness checks that gameplay and buy rounds fit desktop and mobile viewports without page scrolling, and saves screenshots under `test-results/`.
 
 ## Source and license
 
