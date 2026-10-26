@@ -216,36 +216,36 @@ test('orbs spawn on five rings, expire and reject remote click collection', () =
   assert.ok(state.pickups.every((item) => item.lane >= 0 && item.lane < LANE_COUNT));
 });
 
-test('Solar Surge starts on schedule; voice is capped, rate-limited and expires', () => {
+test('Solar Surge starts on schedule and each distinct tap scores immediately', () => {
   const state = fixture();
   state.players = [state.players[0]];
   const pilot = state.players[0];
   state.rays = [];
   startRound(state, 1000);
   state.nextPickupAt = state.phaseEndsAt + 1;
-  assert.equal(applyAction(state, 'a', { type: 'voice', intensity: 1 }).ok, false);
+  assert.equal(applyAction(state, 'a', { type: 'solar-tap' }).ok, false);
   advance(state, 15);
-  // Isolate the metered voice source from a lap or natural orb during this second.
+  // Isolate tap points from a lap or natural orb during this second.
   pilot.orbitProgress = 0;
   state.pickups = [];
   state.nextPickupAt = state.phaseEndsAt + 1;
   assert.equal(state.surge.active, true);
   assert.equal(state.surge.endsAt, 24000);
-  assert.equal(applyAction(state, 'a', { type: 'voice', intensity: 100 }).ok, true);
-  assert.equal(pilot.voiceIntensity, 1);
-  assert.equal(applyAction(state, 'a', { type: 'voice', intensity: 1 }).ok, false);
   const oldScore = pilot.score;
+  assert.equal(applyAction(state, 'a', { type: 'solar-tap' }).ok, true);
+  assert.equal(pilot.score, oldScore + 10);
+  assert.equal(pilot.solarTaps, 1);
+  assert.equal(applyAction(state, 'a', { type: 'solar-tap' }).ok, false);
   advance(state, 1);
-  // One sample expires after 500 ms, so held/stale microphone data cannot score indefinitely.
-  assert.ok(pilot.score - oldScore <= 50);
-  assert.ok(pilot.score - oldScore > 0);
+  assert.equal(pilot.score, oldScore + 10, 'No further presses means no idle Solar points');
   advance(state, 7);
   assert.equal(state.surge.active, false);
-  assert.equal(applyAction(state, 'a', { type: 'voice', intensity: 1 }).ok, false);
+  assert.equal(applyAction(state, 'a', { type: 'solar-tap' }).ok, false);
   advance(state, 17);
   assert.equal(state.surge.active, true);
   assert.equal(state.surge.index, 2);
-  assert.equal(applyAction(state, 'a', { type: 'voice', intensity: NaN }).ok, false);
+  assert.equal(pilot.solarTaps, 0, 'Each new window clears its tap tally');
+  assert.equal(applyAction(state, 'a', { type: 'solar-tap' }).ok, true);
 });
 
 test('all five rings share radii and angular speed with the renderer', () => {
@@ -383,7 +383,7 @@ test('freeze expiry inside a step only permits movement after its deadline', () 
   assert.ok(Math.abs(pilot.angle - angle - normalSpeed * 0.125) < 1e-9);
 });
 
-test('frozen pilots keep passive income and voice scoring without moving', () => {
+test('frozen pilots keep passive income and tap scoring without moving', () => {
   const state = orbFixture({ players: 1 });
   const pilot = state.players[0];
   advance(state, 15);
@@ -392,11 +392,11 @@ test('frozen pilots keep passive income and voice scoring without moving', () =>
   const angle = pilot.angle;
   const credits = pilot.credits;
   const score = pilot.score;
-  assert.equal(applyAction(state, pilot.id, { type: 'voice', intensity: 1 }).ok, true);
+  assert.equal(applyAction(state, pilot.id, { type: 'solar-tap' }).ok, true);
   advance(state, 2);
   assert.equal(pilot.angle, angle);
   assert.equal(pilot.credits, credits + 1);
-  assert.equal(pilot.score, score + 53);
+  assert.equal(pilot.score, score + 13);
 });
 
 test('overdrive stacks with burst and positive orb durations extend within 18 seconds', () => {

@@ -9,7 +9,7 @@
     "build": "node scripts/build.mjs",
     "preview": "node scripts/serve.mjs --dist",
     "test": "node --test --experimental-test-isolation=none tests/*.test.js",
-    "check": "node --check src/main.js && node --check src/arena.js && node --check src/game.js && node --check src/activity.js && node --check src/audio.js && node --check src/microphone.js"
+    "check": "node --check src/main.js && node --check src/arena.js && node --check src/game.js && node --check src/activity.js && node --check src/audio.js"
   },
   "engines": { "node": ">=22.8" },
   "license": "AGPL-3.0-only"

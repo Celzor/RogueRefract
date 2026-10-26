@@ -55,7 +55,7 @@ export class GameAudio {
     const now = this.context.currentTime;
     const throttle = { ray: 0.085, critical: 0.14, collision: 0.12, revolution: 0.12,
       levelup: 0.3, boost: 0.25, purchase: 0.12, reroll: 0.15, countdown: 0.6,
-      roundend: 0.5, start: 0.4, click: 0.035, error: 0.15, collect: 0.07, voice: 0.25 };
+      roundend: 0.5, start: 0.4, click: 0.035, error: 0.15, collect: 0.07, surge: 0.07 };
     if (!(type in throttle) || now - (this.lastPlayed.get(type) ?? -Infinity) < throttle[type]) return;
     if (this.voices.size >= 28) return;
     this.lastPlayed.set(type, now);
@@ -82,7 +82,7 @@ export class GameAudio {
         note(1174.66, 0, 0.105, 0.16);
         note(1760, 0.035, 0.15, 0.11);
         break;
-      case 'voice':
+      case 'surge':
         note(392, 0, 0.2, 0.11, 'triangle', 783.99);
         note(1174.66, 0.07, 0.22, 0.07);
         break;

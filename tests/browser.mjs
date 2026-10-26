@@ -70,13 +70,6 @@ try {
   const context = await browser.newContext({ viewport: { width: 1366, height: 768 }, deviceScaleFactor: 1, reducedMotion: 'no-preference' });
   const page = await context.newPage();
   recordErrors(page);
-  await page.addInitScript(() => {
-    // Exercise the browser permission boundary without requesting a real device in QA.
-    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
-      configurable: true,
-      value: async () => { throw new DOMException('Synthetic permission denial', 'NotAllowedError'); },
-    });
-  });
   await page.clock.install({ time: new Date('2026-10-26T08:00:00Z') });
   const response = await page.goto(origin, { waitUntil: 'networkidle' });
   assert.equal(response.status(), 200, 'Game must load successfully');
@@ -124,10 +117,7 @@ try {
   await page.keyboard.press('d');
   await page.clock.runFor(200);
   assert.equal(await page.locator('[data-lane][aria-pressed="true"]').getAttribute('data-lane'), laneBeforeDetails, 'Game shortcuts stay inactive while run details are open');
-  await page.locator('#mic-button').click();
-  await waitText(page, '#mic-note', 'not allowed');
-  assert.equal(await page.locator('#mic-meter').isVisible(), false, 'Denied microphone stays disabled');
-  await waitText(page, '#mic-button-label', 'Enable microphone');
+  assert.equal(await page.locator('#mic-button').count(), 0, 'Run details do not request microphone access');
   await page.locator('#details-close').click();
 
   // Advance real simulation frames to catch a fresh local level-up event.
@@ -225,7 +215,7 @@ try {
   await mobileContext.close();
 
   assert.deepEqual(errors, [], 'No browser exceptions or console errors');
-  console.log('Browser QA passed: solo roster, on-demand details, sound, microphone denial, upgrade search, five keyboard/touch lanes, burst, level-up celebration, 60-second round, shop-only upgrades, purchases, build persistence, and desktop/mobile layouts without page scrolling.');
+  console.log('Browser QA passed: solo roster, on-demand details, sound, upgrade search, five keyboard/touch lanes, burst, level-up celebration, 60-second round, shop-only upgrades, purchases, build persistence, and desktop/mobile layouts without page scrolling.');
   console.log(`Screenshots: ${output}`);
 } finally {
   await browser.close();

@@ -59,23 +59,12 @@ The coordinating browser is trusted to run the simulation fairly. This is suitab
 
 A local multi-frame relay harness can verify membership, late joins, score synchronization, actions, and host handovers. Final acceptance still requires two signed-in users in a real Refract call, including the desktop app if that is a target. No real call or public deployment is implied by local checks.
 
-## Optional microphone loudness bonus
+## Solar Surge inputs
 
-The game's opt-in local microphone analyzer supports direct HTTPS/localhost play and is compatible with the updated local Refract source inspected on 26 October 2026. That source now delegates microphone access to hosted activities at all three layers. This establishes source compatibility; the running instance and desktop build must also contain those changes.
+Solar Surges use keyboard and pointer inputs. The activity does not request microphone access or device permissions. Refract's normal activity embedding and relay support are sufficient.
 
-| Refract source | Current behavior |
-| --- | --- |
-| `frontend/src/lib/activities.ts:43`, applied by `frontend/src/components/activities/ActivityFrame.tsx:213` | `ACTIVITY_PERMISSIONS` includes `microphone 'src'`, delegating capture to the activity frame's source origin. External activity frames retain `allow-same-origin`. |
-| `backend/src/middleware/security.ts:43` and `backend/src/lib/permissionsPolicy.ts:9` | The response policy permits microphone capture for `self` and registered HTTPS activity origins, plus loopback HTTP development origins. It normalizes and deduplicates origins; camera and display capture remain restricted to `self`. For this GitHub Pages project, the microphone origin is `https://celzor.github.io`, without the repository path. |
-| `electron/main.ts:640–688` and `electron/activityMicrophone.ts:41` | A focused, direct activity frame can request audio-only capture after a native origin-specific consent prompt. Grants are tied to the live frame and page URL for the app session; frame, origin and navigation checks remain in place. |
+Two eight-second events start 15 and 40 seconds into each heat. During an event, each distinct Space press or on-screen tap earns 10 points. The bottom progress bar shows the remaining event time, the pilot's press count, and bonus points. Holding the keyboard key does not generate repeated presses. Outside events, Space keeps its orbit-burst behavior.
 
-`src/microphone.js` already checks the browser's effective microphone policy before requesting audio with `getUserMedia`. It handles denial and unavailable devices, meters audio locally without playback or recording, and releases the stream when disabled or the page closes. It needs no new Refract protocol message for this direct-capture path. The game relays only normalized loudness values for scoring; raw microphone audio is not sent through the activity relay.
+The browser sends `solar-tap` actions with the current round. The coordinator validates the scheduled window, living-player eligibility, and a 25-millisecond duplicate guard before awarding points. The bridge's action IDs also prevent replay. Solar inputs do not consume battle turns, LP, or PP. Eliminated pilots cannot score.
 
-To verify the updated integration:
-
-1. Deploy the Refract frontend and backend changes, and install a desktop build containing the Electron changes if testing there. Register the final HTTPS game URL, then reload the Refract host page and reopen or refresh the activity.
-2. Open **Run details → Enable microphone** inside the game. Grant the browser permission or the desktop activity microphone prompt. Desktop capture uses the activity's own stream independently of the call's mute setting.
-3. Confirm the meter responds to normal speech. During a Solar Surge, confirm that voice adds points, then turn the microphone off and confirm the meter stops.
-4. If the game reports a blocked activity frame, check that the running host includes the updated iframe delegation and server policy. A reverse proxy can impose an additional restrictive Permissions-Policy; the effective browser policy must permit the registered game origin.
-
-Packaged activities with opaque origins cannot use direct device capture. Browser or operating-system permission can still deny access, and the game remains fully playable without the microphone. Local checks do not replace a signed-in real-call test of the deployed instance and target desktop build. No Refract application files have been changed by this game project.
+For acceptance in a real call, have two signed-in pilots reach a surge, mash Space and the tap button, and confirm synchronized scores and the countdown. Verify a held key does not continue scoring and that input stops awarding bonus points after the event or heat ends. A late join or host handover should restore the current countdown and tap totals from synchronized state.

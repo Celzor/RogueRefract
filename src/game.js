@@ -7,6 +7,8 @@ export const LANE_RADII = Object.freeze([0.48, 0.61, 0.74, 0.87, 1]);
 export const LANE_SPEEDS = Object.freeze([1.15, 1.075, 1, 0.925, 0.85]);
 export const MAX_RAYS = 50;
 export const MAX_PICKUPS = 8;
+export const SOLAR_TAP_POINTS = 10;
+const SOLAR_TAP_INTERVAL = 25;
 const ORB_INTERVAL = 1500;
 const ORB_LIFETIME = 8000;
 const ORB_CONTACT_ARC = 0.075;
@@ -251,6 +253,37 @@ function random(state) {
 
 export function xpForLevel(level) { return 50 + Math.max(1, level) * 25; }
 
+/** The exact schedule is shared by input handling and the UI, even between ticks. */
+export function getSolarWindow(state, now = state.now) {
+  const empty = { active: false, startsAt: 0, endsAt: 0, nextAt: 0, index: 0 };
+  if (state.phase !== 'playing') return empty;
+  const roundStart = state.phaseEndsAt - state.roundDuration * 1000;
+  const starts = [roundStart + 15000, roundStart + 40000].filter((at) => at < state.phaseEndsAt);
+  const index = starts.filter((at) => at <= now).length;
+  const startsAt = index ? starts[index - 1] : 0;
+  const endsAt = index ? Math.min(startsAt + 8000, state.phaseEndsAt) : 0;
+  return { active: index > 0 && now >= startsAt && now < endsAt && now < state.phaseEndsAt, startsAt, endsAt, nextAt: starts.find((at) => at > now) ?? state.phaseEndsAt, index };
+}
+
+function resetSolarPlayer(player, clearScore = true) {
+  if (clearScore) player.solarTaps = player.solarScore = 0;
+  player.lastSolarTapAt = -1;
+  player.nextSolarTapAt = 0;
+}
+
+function syncSolarWindow(state) {
+  const window = getSolarWindow(state);
+  // Commands use the wall clock and may arrive ahead of fixed-step catch-up.
+  // Never reopen/reset an earlier window after a later one has scored a tap.
+  if (window.index < state.surge.index) return { ...window, active: false };
+  if (window.index > state.surge.index) {
+    for (const player of state.players) resetSolarPlayer(player);
+    if (window.active) emit(state, { type: 'surge-start', text: 'Solar Surge · mash Space for +10 points per press!' });
+  }
+  state.surge = window;
+  return window;
+}
+
 export function getStats(player, now = player.updatedAt || 0) {
   const n = (id) => count(player, id);
   return {
@@ -427,7 +460,7 @@ export function createGame({ seed = Date.now(), now = Date.now(), roundDuration 
       { angle: 4.2, color: '#ffc785', speed: -0.14, width: 0.025 },
     ], collisionCooldowns: {}, eventSeq: 0, events: [], lastResults: [],
     pickups: [], pickupSeq: 0, nextPickupAt: 0, orbDeck: [], fieldEffects: [], baseRayCount: 3,
-    surge: { active: false, endsAt: 0, nextAt: 0, index: 0 },
+    surge: { active: false, startsAt: 0, endsAt: 0, nextAt: 0, index: 0 },
   };
 }
 
@@ -466,7 +499,7 @@ export function addPlayer(state, { id, name = 'Pilot', color, avatarUrl = null, 
     nextDecisionAt: state.now + 2000 + random(state) * 4000,
     updatedAt: state.now, starlightUntil: 0, chipUntil: 0,
     slowUntil: 0, frozenUntil: 0, overdriveUntil: 0, echoUntil: 0, shieldUntil: 0, gravityUntil: 0, nextGravityAt: 0,
-    voiceIntensity: 0, voiceUntil: 0, lastVoiceAt: -1000, voiceCarry: 0, voiceEventAt: 0,
+    solarTaps: 0, solarScore: 0, lastSolarTapAt: -1, nextSolarTapAt: 0,
   };
   state.players.push(player);
   if (state.gameMode === 'battle') initializeBattle(player);
@@ -542,7 +575,7 @@ export function startRound(state, now = state.now) {
   state.fieldEffects = [];
   state.rays.length = Math.min(state.rays.length, state.baseRayCount);
   state.nextPickupAt = now + ORB_INTERVAL;
-  state.surge = { active: false, endsAt: 0, nextAt: now + 15000, index: 0 };
+  state.surge = getSolarWindow(state, now);
   if (state.gameMode === 'battle') {
     state.battleWinnerId = null;
     state.battleEntrants = state.players.length;
@@ -566,11 +599,7 @@ export function startRound(state, now = state.now) {
     player.starlightUntil = 0;
     player.chipUntil = 0;
     for (const key of ['slowUntil', 'frozenUntil', 'overdriveUntil', 'echoUntil', 'shieldUntil', 'gravityUntil', 'nextGravityAt']) player[key] = 0;
-    player.voiceIntensity = 0;
-    player.voiceUntil = 0;
-    player.lastVoiceAt = -1000;
-    player.voiceCarry = 0;
-    player.voiceEventAt = now;
+    resetSolarPlayer(player);
     player.nextDecisionAt = now + 1500 + random(state) * 3500;
   }
   if (state.gameMode === 'battle') {
@@ -592,7 +621,7 @@ function openShop(state, now, preparation = false) {
   state.pickups = [];
   state.fieldEffects = [];
   state.rays.length = Math.min(state.rays.length, state.baseRayCount);
-  state.surge.active = false;
+  state.surge = { active: false, startsAt: 0, endsAt: 0, nextAt: 0, index: 0 };
   state.phaseEndsAt = now + state.shopDuration * 1000;
   state.lastResults = preparation ? [] : [...state.players].sort((a, b) => state.gameMode === 'battle' ? Number(b.id === state.battleWinnerId) - Number(a.id === state.battleWinnerId) || b.health - a.health || b.roundScore - a.roundScore : b.roundScore - a.roundScore).map((p) => ({ id: p.id, name: p.name, score: p.roundScore, ...(state.gameMode === 'battle' ? { health: p.health, knockouts: p.knockouts } : {}) }));
   for (const player of state.players) {
@@ -604,8 +633,7 @@ function openShop(state, now, preparation = false) {
     }
     player.boostUntil = 0;
     for (const key of ['starlightUntil', 'chipUntil', 'slowUntil', 'frozenUntil', 'overdriveUntil', 'echoUntil', 'shieldUntil', 'gravityUntil', 'nextGravityAt']) player[key] = 0;
-    player.voiceIntensity = 0;
-    player.voiceUntil = 0;
+    resetSolarPlayer(player, false);
     player.ready = false;
     player.rerollCost = 35;
     player.shopOffers = rollOffers(state, player);
@@ -756,7 +784,7 @@ export function applyAction(state, playerId, action, now = state.now) {
   if (action.round !== undefined && (!Number.isInteger(action.round) || action.round !== state.round)) return { ok: false, error: 'That action belongs to an earlier round. Try again.' };
   state.now = now;
   player.updatedAt = now;
-  if (state.phase === 'playing' && now >= state.phaseEndsAt && ['boost', 'lane', 'collect', 'voice', 'cast', 'pass-turn'].includes(action.type)) {
+  if (state.phase === 'playing' && now >= state.phaseEndsAt && ['boost', 'lane', 'collect', 'solar-tap', 'cast', 'pass-turn'].includes(action.type)) {
     return { ok: false, error: 'This round has ended. The upgrade shop is opening.' };
   }
   if (state.gameMode === 'battle' && state.phase === 'playing' && state.combatStyle !== 'no-limits' && ['cast', 'pass-turn'].includes(action.type) && now >= state.turnEndsAt) {
@@ -764,7 +792,7 @@ export function applyAction(state, playerId, action, now = state.now) {
     advanceBattleTurn(state);
     if (player.id === expiredPlayerId) return { ok: false, error: 'Your turn has expired. Wait for your next turn.' };
   }
-  if (state.gameMode === 'battle' && state.phase === 'playing' && player.health <= 0 && ['boost', 'lane', 'collect', 'voice', 'cast', 'pass-turn'].includes(action.type)) return { ok: false, error: 'You are eliminated until the next heat.' };
+  if (state.gameMode === 'battle' && state.phase === 'playing' && player.health <= 0 && ['boost', 'lane', 'collect', 'solar-tap', 'cast', 'pass-turn'].includes(action.type)) return { ok: false, error: 'You are eliminated until the next heat.' };
   switch (action.type) {
     case 'mode':
       if (state.phase !== 'lobby') return { ok: false, error: 'Choose a mode in the lobby.' };
@@ -792,14 +820,15 @@ export function applyAction(state, playerId, action, now = state.now) {
       state.orbDeck = [];
       state.rays.length = Math.min(state.rays.length, state.baseRayCount);
       state.collisionCooldowns = {};
-      state.surge = { active: false, endsAt: 0, nextAt: 0, index: 0 };
+      state.surge = { active: false, startsAt: 0, endsAt: 0, nextAt: 0, index: 0 };
       if (state.gameMode === 'battle') state.battleWinnerId = null;
       state.turnPlayerId = null;
       state.turnEndsAt = 0;
       for (const pilot of state.players) {
         pilot.ready = false;
         pilot.shopOffers = [];
-        for (const key of ['boostUntil', 'boostReadyAt', 'slingUntil', 'starlightUntil', 'chipUntil', 'slowUntil', 'frozenUntil', 'overdriveUntil', 'echoUntil', 'shieldUntil', 'gravityUntil', 'nextGravityAt', 'voiceUntil', 'voiceIntensity', 'voiceCarry']) pilot[key] = 0;
+        for (const key of ['boostUntil', 'boostReadyAt', 'slingUntil', 'starlightUntil', 'chipUntil', 'slowUntil', 'frozenUntil', 'overdriveUntil', 'echoUntil', 'shieldUntil', 'gravityUntil', 'nextGravityAt']) pilot[key] = 0;
+        resetSolarPlayer(pilot);
         if (pilot.moves) restoreBattle(pilot, true);
       }
       emit(state, { type: 'lobby', text: 'Back in the lobby. Your build and scores are saved.' });
@@ -830,13 +859,15 @@ export function applyAction(state, playerId, action, now = state.now) {
       return { ok: true };
     }
     case 'collect': return { ok: false, error: 'Move your pilot into an orb on its ring to collect it.' };
-    case 'voice': {
-      if (state.phase !== 'playing' || !state.surge.active) return { ok: false, error: 'Your microphone scores during Solar Surge.' };
-      if (!Number.isFinite(action.intensity)) return { ok: false, error: 'Invalid microphone level.' };
-      if (now - player.lastVoiceAt < 200) return { ok: false, error: 'Microphone samples are limited to five per second.' };
-      player.lastVoiceAt = now;
-      player.voiceIntensity = Math.max(0, Math.min(1, action.intensity));
-      player.voiceUntil = now + 500;
+    case 'solar-tap': {
+      if (!syncSolarWindow(state).active) return { ok: false, error: 'Mash Space during a Solar Surge to score.' };
+      if (now - player.lastSolarTapAt < SOLAR_TAP_INTERVAL) return { ok: false, error: 'Solar taps must be distinct presses.' };
+      player.lastSolarTapAt = now;
+      player.solarTaps++;
+      player.solarScore += SOLAR_TAP_POINTS;
+      player.score += SOLAR_TAP_POINTS;
+      player.roundScore += SOLAR_TAP_POINTS;
+      emit(state, { type: 'surge', playerId: player.id, amount: SOLAR_TAP_POINTS });
       return { ok: true };
     }
     case 'buy':
@@ -893,14 +924,7 @@ export function tickGame(state, dt, now = state.now + dt * 1000) {
   const simulationDt = Math.max(0, Math.min(seconds, (state.phaseEndsAt - (state.now - seconds * 1000)) / 1000));
   const stepEnd = Math.min(state.now, state.phaseEndsAt);
   const stepStart = stepEnd - simulationDt * 1000;
-  const roundStart = state.phaseEndsAt - state.roundDuration * 1000;
-  const surgeWasActive = state.surge.active;
-  const previousSurgeIndex = state.surge.index;
-  state.surge.index = Math.max(0, Math.floor((Math.min(state.now, state.phaseEndsAt - 1) - roundStart - 15000) / 25000) + 1);
-  state.surge.nextAt = roundStart + 15000 + state.surge.index * 25000;
-  state.surge.endsAt = state.surge.index ? roundStart + 15000 + (state.surge.index - 1) * 25000 + 8000 : 0;
-  state.surge.active = state.surge.index > 0 && state.now < state.surge.endsAt && state.now < state.phaseEndsAt;
-  if (state.surge.active && state.surge.index > previousSurgeIndex) emit(state, { type: 'surge-start', text: 'Solar Surge · turn sound into starlight' });
+  const solarWindow = syncSolarWindow(state);
   state.fieldEffects = state.fieldEffects.filter((effect) => effect.expiresAt > stepStart);
   syncFieldRays(state);
   const rayBoundaries = [stepStart, stepEnd, ...state.fieldEffects.filter((effect) => effect.type === 'haste' && effect.expiresAt > stepStart && effect.expiresAt < stepEnd).map((effect) => effect.expiresAt)].sort((a, b) => a - b);
@@ -917,18 +941,9 @@ export function tickGame(state, dt, now = state.now + dt * 1000) {
     if (state.gameMode === 'battle' && player.health <= 0) continue;
     if (player.barrierUntil <= state.now && player.shieldHealth) player.shieldHealth = 0;
     const stats = getStats(player);
-    const voiceWindow = roundStart + 15000 + Math.max(0, Math.floor((stepEnd - roundStart - 15000) / 25000)) * 25000;
-    const voiceSeconds = Math.max(0, Math.min(stepEnd, voiceWindow + 8000, player.voiceUntil) - Math.max(stepStart, voiceWindow, player.lastVoiceAt)) / 1000;
-    player.voiceCarry += Math.max(0, Math.min(1, player.voiceIntensity)) * 100 * voiceSeconds;
-    if ((state.surge.active && state.now - player.voiceEventAt >= 1000) || (surgeWasActive && !state.surge.active) || state.now >= state.phaseEndsAt) {
-      const voicePoints = Math.floor(player.voiceCarry + 1e-9);
-      player.voiceCarry -= voicePoints;
-      player.voiceEventAt = state.now;
-      if (voicePoints > 0) {
-        player.score += voicePoints;
-        player.roundScore += voicePoints;
-        emit(state, { type: 'surge', playerId: player.id, amount: voicePoints });
-      }
+    if (player.bot && solarWindow.active && state.now >= player.nextSolarTapAt) {
+      applyAction(state, player.id, { type: 'solar-tap', round: state.round }, state.now);
+      player.nextSolarTapAt = state.now + 160 + Math.floor(random(state) * 240);
     }
     if (player.gravityUntil > stepStart && player.nextGravityAt <= stepEnd && player.frozenUntil <= stepStart && !(player.stunUntil > stepStart)) {
       const lastPullAt = Math.min(stepEnd, player.gravityUntil - 1);

@@ -2,7 +2,7 @@ import { createGame, addPlayer, removePlayer, applyAction, tickGame, getStats, g
 import { OrbitArena } from './arena.js';
 import { createActivityBridge } from './activity.js';
 import { GameAudio } from './audio.js';
-import { VoiceMeter } from './microphone.js';
+import { getSolarWindow } from './game.js';
 import { MOVE_CATALOG, ORB_UPGRADE_CATALOG, getMoveStats, getMoveCost, getMoveUnlockRound, getOrbUpgradeCost, getOrbUpgradeUnlockRound, getLightCapacity } from './game.js';
 
 const paths = {
@@ -22,7 +22,6 @@ const paths = {
   close:'<path d="m6 6 12 12M18 6 6 18"/>',
   refresh:'<path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 7a7 7 0 0 1 11.6-2L20 8M4 16l2.8 3A7 7 0 0 0 18.4 17"/>',
   lock:'<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4m-4 5v2"/>',
-  mic:'<rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2m-7 9v3m-4 0h8"/>',
   info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.1"/>',
   sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M19 5l-1.5 1.5m-11 11L5 19"/>',
   collision:'<path d="m12 2 2 6 6-2-3 6 5 3-7 1-3 6-3-6-7-1 5-3-3-6 6 2 2-6Z"/>',
@@ -60,11 +59,16 @@ document.getElementById('app').innerHTML = `
       <div class="panel arena-panel">
         <div class="arena-top"><h2 class="arena-title">${icon('orbit')} The refraction field</h2><div class="field-effects" id="field-effects" aria-live="off"><span id="beam-count">3 BEAMS</span><span id="ray-speed">1.00x RAY SPEED</span><span id="pilot-effect" hidden></span></div><span class="arena-status"><i class="status-dot"></i><span id="arena-status">PRACTICE LOBBY</span></span></div>
         <div class="arena-stage">
-          <canvas id="arena" class="arena-canvas" tabindex="0" aria-label="Five orbit rings. Use A and D or 1 through 5 to change rings, Space to burst. Absorb power-up orbs by touching them with your avatar.">Your browser needs canvas support to display the orbit.</canvas>
+          <canvas id="arena" class="arena-canvas" tabindex="0" aria-label="Five orbit rings. Use A and D or 1 through 5 to change rings, Space to burst, or mash Space during Solar Surges for bonus points. Absorb power-up orbs by touching them with your avatar.">Your browser needs canvas support to display the orbit.</canvas>
           <div class="arena-coordinate">FIELD <span>R-01</span><br><span id="field-phase">AWAITING LAUNCH</span></div><div class="arena-coordinate right"><span id="pilot-count">06</span> PILOTS<br>MOVE TO ABSORB ORBS</div>
           <div class="battle-roster" id="battle-roster" aria-label="Player health" hidden></div>
           <div class="levelup-banner" id="levelup-banner" role="status" aria-live="polite" hidden><span class="levelup-emblem">${icon('sparkles')}</span><span><strong id="levelup-title">LEVEL UP</strong><small>FREE UPGRADE BANKED</small></span><b id="levelup-number">02</b></div>
           <div class="arena-overlay"><span class="arena-message" id="arena-message">${icon('sparkles')} Find your ring. Catch the chaos.</span></div>
+          <section class="solar-event" id="solar-event" aria-label="Solar Surge challenge" hidden>
+            <div class="solar-event-copy"><strong id="solar-title">Solar Surge incoming</strong><span id="solar-timer">15.0s</span></div>
+            <div class="solar-progress" id="solar-progress" role="progressbar" aria-label="Time until Solar Surge" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="solar-fill"></i></div>
+            <div class="solar-event-bottom"><span id="solar-score">0 presses · +0 points</span><button id="solar-tap-button" class="solar-tap-button" aria-label="Score a Solar Surge press">Tap / SPACE <small>+10 points / press</small></button></div>
+          </section>
           <section class="upgrade-section" id="shop" aria-labelledby="shop-title" tabindex="-1" hidden>
             <div class="upgrade-header"><div><div class="eyebrow" id="shop-tag">BUY ROUND</div><div class="upgrade-heading"><h2 id="shop-title">Build something ridiculous.</h2></div><p id="shop-subtitle">Choose your next advantage.</p></div><div class="shop-actions"><span class="free-token" id="free-tokens" hidden></span><button class="secondary-button" id="reroll-button">${icon('refresh')}<span id="reroll-label">Reroll / 35</span></button></div></div>
             <div class="shop-tabs" id="shop-tabs" role="group" aria-label="Shop category" hidden><button data-shop-tab="moves" aria-pressed="false">Battle moves</button><button data-shop-tab="orbs" aria-pressed="false">Light orbs</button><button data-shop-tab="orbit" aria-pressed="true">Orbit upgrades</button></div>
@@ -89,7 +93,6 @@ document.getElementById('app').innerHTML = `
 <dialog id="run-details" aria-labelledby="details-title"><div class="dialog-header"><div><div class="eyebrow">YOUR RUN, AT A GLANCE</div><h2 id="details-title">Behind the chaos.</h2></div><button id="details-close" class="icon-button" aria-label="Close run details">${icon('close')}</button></div><div class="dialog-body details-grid">
   <section class="panel"><div class="leaderboard-heading"><div class="section-label">THE LEADERBOARD <span id="leaderboard-type">THIS RUN</span></div></div><div id="leaderboard" class="leaderboard-list"></div><div class="leaderboard-footer"><span id="roster-caption">YOU + 5 PRACTICE BOTS</span><span class="live-label" id="sync-label">LOCAL</span></div></section>
   <div class="column"><section class="panel panel-padding"><div class="section-label">PILOT STATS ${icon('orbit')}</div><div class="stat-grid"><div><div class="stat-label">${icon('zap')} Spin speed</div><div class="stat-value"><span id="stat-speed">1.00</span><small>x</small></div></div><div><div class="stat-label">${icon('sparkles')} Crit chance</div><div class="stat-value" id="stat-crit">8%</div></div><div><div class="stat-label">${icon('sun')} Ray hits</div><div class="stat-value" id="stat-hits">0</div></div><div><div class="stat-label">${icon('orbit')} Revolutions</div><div class="stat-value" id="stat-laps">0</div></div></div></section><section class="panel panel-padding build-panel"><div class="section-label">YOUR BUILD <span id="build-count">00</span></div><div class="run-build" id="run-build"><p class="empty-build">Your next build starts in the buy round.</p></div></section><div class="personal-best">${icon('trophy')}<div><span>YOUR PERSONAL BEST</span><strong id="personal-best">0 points</strong></div></div></div>
-  <section class="panel panel-padding mic-card"><div class="mic-icon">${icon('mic')}</div><h3 id="mic-title">Make some noise.</h3><p id="mic-description">Solar Surges turn your voice into bonus points. Opt in, then keep an eye on the countdown.</p><div class="mic-meter" id="mic-meter" aria-label="Microphone level" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>${'<i></i>'.repeat(24)}</div><button class="secondary-button" id="mic-button">${icon('mic')} <span id="mic-button-label">Enable microphone</span></button><div class="mic-privacy" id="mic-note">OPT-IN / NORMAL SPEAKING IS ENOUGH</div></section>
 </div></dialog>
 <div class="toast-stack" id="toasts" role="status" aria-live="polite"></div>
 <dialog id="modal" aria-labelledby="modal-title"><div class="dialog-header"><div><div class="eyebrow" id="modal-eyebrow">ORBITAL FIELD GUIDE</div><h2 id="modal-title">How to play</h2></div><button class="icon-button" id="modal-close" aria-label="Close dialog">${icon('close')}</button></div><div class="dialog-body" id="modal-body"></div></dialog>`;
@@ -112,8 +115,7 @@ let avatarSignature = '';
 let countdownSecond = -1;
 let modalKind = '';
 let errorAt = 0;
-let nextVoiceAt = 0;
-let micBusy = false;
+let spaceHeld = false;
 let levelupTimer;
 let shopTab = 'orbit';
 let selectedTarget = '';
@@ -135,13 +137,6 @@ function toast(text, type = '') {
   setTimeout(() => node.remove(), 4200);
 }
 
-const mic = new VoiceMeter({
-  onLevel(level) {
-    $('mic-meter').setAttribute('aria-valuenow', String(Math.round(level * 100)));
-    [...$('mic-meter').children].forEach((bar, i) => { const lit = i < level * 24; bar.classList.toggle('lit', lit); bar.style.height = `${lit ? 8 + Math.sin(i * 0.8) * 5 + level * 11 : 4}px`; });
-  },
-  onError(message) { toast(message, 'error'); put('mic-note', message); $('mic-meter').hidden = true; put('mic-button-label','Enable microphone'); },
-});
 const arena = new OrbitArena($('arena'));
 
 function showLevelUp(level) {
@@ -192,13 +187,13 @@ function processEvents() {
     const recent = gameNow() - event.at < 1500;
     if (recent) arena.emit(event, state, selfId);
     if (event.playerId === selfId && recent) {
-      const sound = event.type === 'ray' && event.critical ? 'critical' : event.type === 'surge' ? 'voice' : event.type;
+      const sound = event.type === 'ray' && event.critical ? 'critical' : event.type;
       audio.play(sound);
       if (event.type === 'levelup') showLevelUp(event.amount);
       if (event.type === 'purchase' || event.type === 'collect') toast(event.text, 'success');
     }
     if (event.type === 'round-start') { if (recent) audio.play('start'); if (['results', 'library'].includes(modalKind)) closeModal(); }
-    if (event.type === 'surge-start' && recent) toast(mic.enabled ? 'Solar Surge! Speak to turn your voice into points.' : 'Solar Surge! Your mic can score for the next 8 seconds.');
+    if (event.type === 'surge-start' && recent) toast('Solar Surge! Mash SPACE or tap the button: +10 points per press.');
     if (event.type === 'round-end') {
       if (recent) audio.play('roundend');
       const p = me();
@@ -260,8 +255,8 @@ bridge = createActivityBridge({
     const id = String(fromId);
     if (['start','reset','mode','combat-style','lobby'].includes(action.type) && id !== String(bridge.participants[0]?.id)) return;
     const result = applyAction(state, id, action, Date.now());
-    if (!result.ok && id === selfId && action.type !== 'voice') { audio.play('error'); toast(result.error, 'error'); }
-    if (result.ok && action.type !== 'voice') { processEvents(); publish(); renderUI(); }
+    if (!result.ok && id === selfId && action.type !== 'solar-tap') { audio.play('error'); toast(result.error, 'error'); }
+    if (result.ok) { processEvents(); if (action.type !== 'solar-tap') publish(); renderUI(); }
   },
   onError(error) { if (Date.now() - errorAt > 6000) { toast(error.message, 'error'); errorAt = Date.now(); } },
 });
@@ -358,6 +353,38 @@ function renderBattle(p, now, spectator) {
   }
 }
 
+function renderSolar(now = gameNow()) {
+  const solar=getSolarWindow(state,now);
+  const upcoming=state.phase==='playing' && !solar.active && solar.nextAt>now && solar.nextAt<state.phaseEndsAt;
+  const panel=$('solar-event');
+  panel.hidden=!solar.active && !upcoming;
+  panel.classList.toggle('active',solar.active);
+  if (panel.hidden) return;
+  const p=me();
+  const eliminated=state.gameMode==='battle' && p?.health<=0;
+  const remaining=Math.max(0,((solar.active ? solar.endsAt : solar.nextAt)-now)/1000);
+  const roundStart=state.phaseEndsAt-state.roundDuration*1000;
+  const countdownStart=solar.index ? solar.endsAt : roundStart;
+  const duration=Math.max(0.001,(solar.endsAt-solar.startsAt)/1000);
+  const progress=solar.active ? remaining/duration*100 : (now-countdownStart)/Math.max(1,solar.nextAt-countdownStart)*100;
+  const percent=Math.max(0,Math.min(100,progress));
+  put('solar-title',solar.active ? eliminated ? 'Solar Surge · spectating' : 'Solar Surge · mash SPACE!' : 'Solar Surge incoming');
+  put('solar-timer',`${remaining.toFixed(1)}s ${solar.active ? 'left' : 'until surge'}`);
+  $('solar-fill').style.width=`${percent.toFixed(2)}%`;
+  $('solar-progress').setAttribute('aria-valuenow',percent.toFixed(1));
+  $('solar-progress').setAttribute('aria-label',solar.active ? 'Solar Surge time remaining' : 'Time until Solar Surge');
+  $('solar-progress').setAttribute('aria-valuetext',`${remaining.toFixed(1)} seconds ${solar.active ? 'remaining' : 'until the surge'}`);
+  const current=state.surge.index===solar.index;
+  put('solar-score',`${current ? p?.solarTaps || 0 : 0} presses · +${current ? p?.solarScore || 0 : 0} points`);
+  $('solar-tap-button').disabled=!solar.active || !snapshotReady || !p || eliminated;
+}
+
+function tapSolar() {
+  const p=me();
+  if (!snapshotReady || !p || !getSolarWindow(state,gameNow()).active || (state.gameMode==='battle' && p.health<=0)) return;
+  send({type:'solar-tap',round:state.round});
+}
+
 function renderUI() {
   const spectator = !me();
   const p = me() || addPlayer(createGame(), {id:selfId,name:bridge.self?.name || 'Spectator'});
@@ -432,7 +459,7 @@ function renderUI() {
   put('field-phase',playing ? (state.surge.active ? 'SOLAR SURGE' : 'PHOTONS ACTIVE') : shopping ? 'RECALIBRATING' : 'AWAITING LAUNCH');
   let message = `${icon('sparkles')} Sixty seconds. Infinite ways around.`;
   if (playing) {
-    if (state.surge.active) message = `${icon('mic')} SOLAR SURGE · ${Math.max(0,Math.ceil((state.surge.endsAt - now)/1000))}s · ${mic.enabled ? 'Make some noise!' : 'Voice earns bonus points'}`;
+    if (getSolarWindow(state,now).active) message = `${icon('sun')} SOLAR SURGE · MASH SPACE OR TAP · +10 POINTS / PRESS`;
     else if (p.starlightUntil > now) message = `${icon('star')} STARLIGHT · 1.5× points · ${Math.ceil((p.starlightUntil-now)/1000)}s`;
     else if (p.chipUntil > now) message = `${icon('gem')} REFRACT CHIP · +25% speed · ${Math.ceil((p.chipUntil-now)/1000)}s`;
     else message = `${icon('star')} Touch an orb to absorb it · ${state.surge.nextAt < state.phaseEndsAt ? `Solar Surge in ${Math.max(0,Math.ceil((state.surge.nextAt-now)/1000))}s` : 'Bring it home.'}`;
@@ -484,10 +511,9 @@ function renderUI() {
     shopSignature = nextShopSignature;
     $('upgrade-grid').innerHTML = shopping ? spectator ? '<p class="empty-build">The pilots are choosing their upgrades.</p>' : shopTab==='moves' ? MOVE_CATALOG.map((move)=>moveShopCard(move,p)).join('') : shopTab==='orbs' ? ORB_UPGRADE_CATALOG.map((item)=>orbShopCard(item,p)).join('') : offers.map((id) => catalog.get(id)).filter(Boolean).map((u)=>upgradeCard(u,p)).join('') || '<p class="empty-build">Every upgrade is maxed. This orbit belongs to you.</p>' : '';
   }
-  put('mic-title',state.surge.active ? 'Your voice. Your points.' : 'Make some noise.');
-  if (mic.enabled) put('mic-description',state.surge.active ? 'Solar Surge is live. Speaking earns up to 100 extra points per second.' : 'Mic ready. Your next Solar Surge is coming. Voice only scores during the window.');
   if (spectator) { put('play-title','The orbit is full. Enjoy the show.'); put('play-description','Eight pilots are spinning. A place opens when a pilot leaves.'); put('play-label','Spectating'); $('play-button').disabled = true; }
   renderBattle(p, now, spectator);
+  renderSolar(now);
 }
 
 function openModal(kind, title, content, eyebrow = 'ORBITAL FIELD GUIDE') {
@@ -498,7 +524,7 @@ function openModal(kind, title, content, eyebrow = 'ORBITAL FIELD GUIDE') {
 function closeModal() { $('modal').close(); modalKind = ''; }
 function openHelp() {
   if (state.gameMode==='battle') { openBattle(); return; }
-  openModal('help','A field guide to absolute chaos.',`<p>Keep orbiting, catch light rays, and collide with rivals for points. Temporary orbs live on the five rings: move your avatar into one to absorb it and collect its points bonus.</p><div class="help-steps"><div class="help-step">${icon('orbit')}<strong>Pick your ring</strong><p>A / D or the arrow keys move inward and outward. Keys 1-5 select a ring directly. On touchscreens, use the numbered ring buttons.</p></div><div class="help-step">${icon('zap')}<strong>Time your burst</strong><p>Space gives +65% speed and double scoring for four seconds. Chase an orb, set up a collision, or escape a rival.</p></div><div class="help-step">${icon('sun')}<strong>Stack the field</strong><p>Beam orbs add more rays from the core, up to 50 at once. Haste orbs make those rays spin faster. Each stack expires independently.</p></div><div class="help-step">${icon('gem')}<strong>Build between heats</strong><p>Every level banks a free upgrade. After a 60-second heat, the buy round opens right here for 30 seconds. Ready up to launch early.</p></div></div><h3 class="orb-guide-title">Know your orbs</h3><div class="orb-guide">${ORB_CATALOG.map((orb)=>`<div><span style="--orb-color:${orb.color}"></span><p><strong>${escape(orb.name)}</strong> ${escape(orb.description)} <small>+${orb.points} points</small></p></div>`).join('')}</div><p class="help-note">Temporary powers clear between heats. Levels, permanent upgrades, and total scores carry on.<br>Optional microphone bonuses: open Run details to enable Solar Surges.<br>F = FULLSCREEN / ESC = CLOSE DIALOG</p>`);
+  openModal('help','A field guide to absolute chaos.',`<p>Keep orbiting, catch light rays, and collide with rivals for points. Temporary orbs live on the five rings: move your avatar into one to absorb it and collect its points bonus.</p><div class="help-steps"><div class="help-step">${icon('orbit')}<strong>Pick your ring</strong><p>A / D or the arrow keys move inward and outward. Keys 1-5 select a ring directly. On touchscreens, use the numbered ring buttons.</p></div><div class="help-step">${icon('zap')}<strong>Time your burst</strong><p>Outside Solar Surges, Space gives +65% speed and double scoring for four seconds. During a Surge, mash Space for bonus points; use the Orbit burst button to burst. Chase an orb, set up a collision, or escape a rival.</p></div><div class="help-step">${icon('sun')}<strong>Stack the field</strong><p>Beam orbs add more rays from the core, up to 50 at once. Haste orbs make those rays spin faster. Each stack expires independently.</p></div><div class="help-step">${icon('gem')}<strong>Build between heats</strong><p>Every level banks a free upgrade. After a 60-second heat, the buy round opens right here for 30 seconds. Ready up to launch early.</p></div></div><h3 class="orb-guide-title">Know your orbs</h3><div class="orb-guide">${ORB_CATALOG.map((orb)=>`<div><span style="--orb-color:${orb.color}"></span><p><strong>${escape(orb.name)}</strong> ${escape(orb.description)} <small>+${orb.points} points</small></p></div>`).join('')}</div><p class="help-note">Temporary powers clear between heats. Levels, permanent upgrades, and total scores carry on.<br>Solar Surges at 15s and 40s: mash SPACE or tap the button for +10 points per press. Holding the key does not count.<br>F = FULLSCREEN / ESC = CLOSE DIALOG</p>`);
 }
 function openLibrary() {
   openModal('library','Find your next unfair advantage.',`<p>28 upgrades. Hundreds of combinations. Stack levels, create synergies, and see how far your orbit goes.</p><div class="library-toolbar"><input id="upgrade-search" type="search" placeholder="Search upgrades or effects…" aria-label="Search upgrades" /><select id="upgrade-filter" aria-label="Filter rarity"><option value="all">All rarities</option><option value="common">Common</option><option value="rare">Rare</option><option value="epic">Epic</option><option value="legendary">Legendary</option></select></div><div class="library-grid" id="library-grid"></div>`,'THE UPGRADE INDEX');
@@ -510,7 +536,7 @@ function filterLibrary() {
   $('library-grid').innerHTML = items.map((u)=>upgradeCard(u,me(),true)).join('') || '<p class="empty-build">No upgrades found. Try a different search.</p>';
 }
 function openSettings() {
-  openModal('settings','Tune your orbit.',`<div class="settings-row"><div><strong>Sound effects</strong><p>Soft synth hits, refractions, and a little victory noise.</p></div><input id="setting-sound" type="checkbox" aria-label="Sound effects" ${audio.enabled ? 'checked' : ''} /></div><div class="settings-row"><div><strong>Reduced effects</strong><p>Keep the orbit moving with fewer particles and light pulses.</p></div><input id="setting-motion" type="checkbox" aria-label="Reduced visual effects" ${arena.reducedMotion ? 'checked' : ''} /></div><div class="settings-row"><div><strong>Microphone</strong><p>Optional, local volume analysis. Nothing is recorded.</p></div><button class="secondary-button" id="settings-mic">${mic.enabled ? 'Turn off' : 'Enable mic'}</button></div>${mode === 'solo' ? `<div class="settings-row"><div><strong>Pilot name</strong><p>Your name in solo practice.</p></div><input id="pilot-name-input" maxlength="24" value="${escape(profile.name)}" aria-label="Pilot name" style="width:120px;background:#100e16;border:1px solid #ffffff12;padding:8px;color:#c4b3d2;border-radius:5px" /></div>` : ''}<div class="settings-row"><div><strong>Fresh run</strong><p>Reset the build and scores for everyone in this orbit.</p></div><button class="secondary-button" id="reset-run" ${bridge.isHost ? '' : 'disabled'}>New run</button></div><p class="help-note">${mode === 'refract' ? 'Your Refract identity and call participants are used automatically. The first participant coordinates the simulation.' : 'To play with friends, add the deployed GitHub Pages URL to your Refract instance’s Activities catalog and open it in a call.'}</p>`,'FLIGHT CONTROLS');
+  openModal('settings','Tune your orbit.',`<div class="settings-row"><div><strong>Sound effects</strong><p>Soft synth hits, refractions, and a little victory noise.</p></div><input id="setting-sound" type="checkbox" aria-label="Sound effects" ${audio.enabled ? 'checked' : ''} /></div><div class="settings-row"><div><strong>Reduced effects</strong><p>Keep the orbit moving with fewer particles and light pulses.</p></div><input id="setting-motion" type="checkbox" aria-label="Reduced visual effects" ${arena.reducedMotion ? 'checked' : ''} /></div>${mode === 'solo' ? `<div class="settings-row"><div><strong>Pilot name</strong><p>Your name in solo practice.</p></div><input id="pilot-name-input" maxlength="24" value="${escape(profile.name)}" aria-label="Pilot name" style="width:120px;background:#100e16;border:1px solid #ffffff12;padding:8px;color:#c4b3d2;border-radius:5px" /></div>` : ''}<div class="settings-row"><div><strong>Fresh run</strong><p>Reset the build and scores for everyone in this orbit.</p></div><button class="secondary-button" id="reset-run" ${bridge.isHost ? '' : 'disabled'}>New run</button></div><p class="help-note">${mode === 'refract' ? 'Your Refract identity and call participants are used automatically. The first participant coordinates the simulation.' : 'To play with friends, add the deployed GitHub Pages URL to your Refract instance’s Activities catalog and open it in a call.'}</p>`,'FLIGHT CONTROLS');
   $('setting-sound').onchange = (e) => toggleSound(e.target.checked);
   $('setting-motion').onchange = (e) => {
     arena.reducedMotion = e.target.checked;
@@ -520,7 +546,6 @@ function openSettings() {
       $('level-badge').getAnimations().forEach((animation) => animation.cancel());
     }
   };
-  $('settings-mic').onclick = () => { closeModal(); toggleMic(); };
   $('reset-run').onclick = () => { send({type:'reset'}); closeModal(); };
   if ($('pilot-name-input')) $('pilot-name-input').onchange = (e) => { profile.name = e.target.value.trim().slice(0,24) || 'You'; saveProfile(); const p = me(); if (p) p.name = profile.name; renderUI(); };
 }
@@ -539,30 +564,27 @@ function toggleSound(enabled = !audio.enabled) {
   $('sound-button').innerHTML = icon(enabled ? 'sound' : 'mute'); $('sound-button').setAttribute('aria-label',enabled ? 'Mute sound effects' : 'Enable sound effects');
   if (enabled) audio.play('click');
 }
-async function toggleMic() {
-  if (micBusy) return;
-  if (mic.enabled) { mic.stop(); $('mic-meter').hidden = true; put('mic-button-label','Enable microphone'); put('mic-note','OPT-IN · NORMAL SPEAKING IS ENOUGH'); put('mic-description','Solar Surges turn your voice into bonus points. Keep an eye on the countdown.'); renderUI(); return; }
-  micBusy = true; put('mic-button-label','Requesting microphone…');
-  const success = await mic.start();
-  micBusy = false; $('mic-meter').hidden = !success;
-  put('mic-button-label',success ? 'Microphone on · Turn off' : 'Enable microphone');
-  if (success) { put('mic-note','YOUR AUDIO STAYS ON THIS DEVICE'); toast('Microphone ready. Speak during Solar Surges for bonus points.','success'); }
-  renderUI();
-}
-
 $('play-button').onclick = () => send({type:state.phase === 'shop' ? 'ready' : 'start'});
 $('lobby-button').onclick=()=>{send({type:'lobby'});if($('modal').open)closeModal();if($('run-details').open)$('run-details').close();};
 $('battle-guide-button').onclick=openBattle;
-$('battle-target').onchange=(event)=>{selectedTarget=event.target.value;renderUI();};
+$('battle-target').onchange=(event)=>{selectedTarget=event.target.value;renderUI();$('arena').focus({preventScroll:true});};
 $('battle-moves').onclick=(event)=>{const button=event.target.closest('[data-cast]');if(button && !button.disabled && selectedTarget){const targetId=selectedTarget;selectedTarget='';$('battle-target').value='';send({type:'cast',moveId:button.dataset.cast,targetId,round:state.round});renderUI();}};
 $('pass-turn-button').onclick=()=>{selectedTarget='';$('battle-target').value='';send({type:'pass-turn',round:state.round});};
 document.querySelectorAll('[data-mode]').forEach((button)=>button.onclick=()=>send({type:'mode',mode:button.dataset.mode}));
 document.querySelectorAll('[data-combat-style]').forEach((button)=>button.onclick=()=>send({type:'combat-style',style:button.dataset.combatStyle}));
 document.querySelectorAll('[data-shop-tab]').forEach((button)=>button.onclick=()=>{shopTab=button.dataset.shopTab;renderUI();});
 $('boost-button').onclick = () => send({type:'boost'});
+$('solar-tap-button').addEventListener('pointerdown',(event)=>{
+  if (!event.isPrimary || event.button!==0 || $('solar-tap-button').disabled) return;
+  event.preventDefault();
+  tapSolar();
+});
+$('solar-tap-button').addEventListener('click',(event)=>{
+  // Pointer presses score on pointerdown; assistive clicks remain usable.
+  if (event.detail===0 && !spaceHeld) tapSolar();
+});
 $('sound-button').onclick = () => toggleSound();
 $('fullscreen-button').onclick = () => bridge.setFullscreen();
-$('mic-button').onclick = toggleMic;
 $('settings-button').onclick = openSettings;
 $('help-button').onclick = openHelp;
 $('details-button').onclick = () => $('run-details').showModal();
@@ -578,13 +600,25 @@ document.querySelectorAll('[data-lane]').forEach((b)=>b.onclick=()=>send({type:'
 $('upgrade-grid').addEventListener('click',(event)=>{const button=event.target.closest('[data-buy],[data-buy-move],[data-buy-orb]');if(!button || button.disabled)return;if(button.dataset.buyMove)send({type:'buy-move',moveId:button.dataset.buyMove,round:state.round});else if(button.dataset.buyOrb)send({type:'buy-orb',upgradeId:button.dataset.buyOrb,round:state.round});else send({type:'buy',upgradeId:button.dataset.buy,round:state.round});});
 document.addEventListener('pointerdown',()=>audio.unlock(),{once:true});
 document.addEventListener('keydown',(e)=>{
-  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || ['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName) || e.target.isContentEditable || $('modal').open || $('run-details').open || !me()) return;
-  if(e.code==='Space'){e.preventDefault();if(state.phase==='playing' && gameNow()>=me()?.boostReadyAt)send({type:'boost'});}
+  if (e.ctrlKey || e.metaKey || e.altKey || ['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName) || e.target.isContentEditable || $('modal').open || $('run-details').open || !me()) return;
+  if(e.code==='Space' && state.phase==='playing'){
+    e.preventDefault();
+    if (e.repeat || spaceHeld) return;
+    spaceHeld=true;
+    if (getSolarWindow(state,gameNow()).active) tapSolar();
+    else if (gameNow()>=me().boostReadyAt) send({type:'boost',round:state.round});
+    return;
+  }
+  if (e.repeat) return;
   if((state.phase==='lobby' || state.phase==='playing') && (e.code==='KeyA' || e.code==='ArrowLeft')){e.preventDefault();send({type:'lane',lane:Math.max(0,(me()?.lane||0)-1)});}
   if((state.phase==='lobby' || state.phase==='playing') && (e.code==='KeyD' || e.code==='ArrowRight')){e.preventDefault();send({type:'lane',lane:Math.min(LANE_COUNT-1,(me()?.lane||0)+1)});}
   if((state.phase==='lobby' || state.phase==='playing') && /^Digit[1-5]$/.test(e.code)){e.preventDefault();send({type:'lane',lane:Number(e.code.slice(-1))-1});}
   if(e.code==='KeyF')bridge.setFullscreen();
 });
+
+document.addEventListener('keyup',(event)=>{if(event.code==='Space'){if(spaceHeld)event.preventDefault();spaceHeld=false;}});
+window.addEventListener('blur',()=>{spaceHeld=false;});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)spaceHeld=false;});
 
 // Fixed 20Hz host simulation; catch-up keeps a backgrounded coordinator's clock fair.
 const simulationTimer = setInterval(()=>{
@@ -595,12 +629,11 @@ const simulationTimer = setInterval(()=>{
     if(now-lastTick>90000)lastTick=now;
     lastSnapshotAt=performance.now();
   }else lastTick=now;
-  if(mic.enabled && state.phase==='playing' && state.surge.active && now>=nextVoiceAt){nextVoiceAt=now+220;bridge.sendAction({type:'voice',intensity:Math.round(mic.level*100)/100});}
 },50);
 const publishTimer=setInterval(()=>{if(bridge.isHost && state.phase!=='lobby')publish();},500);
 const uiTimer=setInterval(renderUI,150);
 let animation;
-function animate(now){arena.render(state,selfId,now,state.phase==='playing' ? (now-lastSnapshotAt)/1000 : 0);animation=requestAnimationFrame(animate);}
+function animate(now){arena.render(state,selfId,now,state.phase==='playing' ? (now-lastSnapshotAt)/1000 : 0);renderSolar();animation=requestAnimationFrame(animate);}
 renderUI(); animation=requestAnimationFrame(animate);
-window.addEventListener('pagehide',()=>{const p=me();if(p){profile.best=Math.max(profile.best,p.score);saveProfile();}mic.stop();$('mic-meter').hidden=true;put('mic-button-label','Enable microphone');put('mic-note','OPT-IN · NORMAL SPEAKING IS ENOUGH');});
-window.addEventListener('beforeunload',()=>{clearTimeout(levelupTimer);clearInterval(simulationTimer);clearInterval(publishTimer);clearInterval(uiTimer);cancelAnimationFrame(animation);mic.destroy();audio.destroy();arena.destroy();bridge.destroy();});
+window.addEventListener('pagehide',()=>{const p=me();if(p){profile.best=Math.max(profile.best,p.score);saveProfile();}spaceHeld=false;});
+window.addEventListener('beforeunload',()=>{clearTimeout(levelupTimer);clearInterval(simulationTimer);clearInterval(publishTimer);clearInterval(uiTimer);cancelAnimationFrame(animation);audio.destroy();arena.destroy();bridge.destroy();});

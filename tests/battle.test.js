@@ -219,7 +219,7 @@ test('eliminated pilots freeze for the whole heat and cannot earn points, collec
   assert.equal(cast(state, player, 'photon-strike', rival).ok, true);
   assert.equal(state.phase, 'playing');
   const before = { score: rival.score, credits: rival.credits, angle: rival.angle };
-  for (const action of [{ type: 'lane', lane: 4 }, { type: 'boost' }, { type: 'voice', intensity: 1 }, { type: 'cast', moveId: 'mending-light', targetId: rival.id }]) assert.equal(act(state, rival, action).ok, false);
+  for (const action of [{ type: 'lane', lane: 4 }, { type: 'boost' }, { type: 'solar-tap' }, { type: 'cast', moveId: 'mending-light', targetId: rival.id }]) assert.equal(act(state, rival, action).ok, false);
   catchOrb(state, rival, 'light-nova');
   tickGame(state, 0.05, state.now + 10000);
   assert.equal(rival.health, 0);
